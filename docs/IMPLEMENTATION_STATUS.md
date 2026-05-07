@@ -191,10 +191,10 @@ fuse/
 - Progress indicators
 - **Target**: 20+ unit tests, 10+ integration tests
 
-#### 📋 Task 5: Model Manager - Basic Operations
+#### ✅ Task 5: Model Manager - Basic Operations (COMPLETE)
 - ModelSource and ModelMetadata types
-- Model pull from Hugging Face
-- Model pull from Unsloth
+- Model pull from Hugging Face & Unsloth with Resume Support (Safe 416/200 fallbacks)
+- Registry Format Filtering (GGUF, Safetensors) with persistent metadata
 - Model listing and removal
 - **Target**: 30+ unit tests, 15+ integration tests
 
@@ -300,7 +300,7 @@ cargo run -- --help
 - [ ] Model manager
 
 #### Planned 📋
-- [ ] Inference engine
+- [ ] Inference engine (Cache completed: Deadlock-free "Zero-Scan" architecture)
 - [ ] Web server with Axum
 - [ ] Dioxus UI
 - [ ] RAG service
@@ -363,7 +363,7 @@ The Fuse project has a solid foundation with:
 
 ---
 
-**Last Updated**: 2024-01-01  
-**Status**: Foundation Complete, Ready for Next Phase  
-**Next Task**: Task 3 - Storage Layer and Database  
-**Overall Progress**: 2/30 tasks complete (7%)
+**Last Updated**: 2026-05-08  
+**Status**: Foundation Complete, Core Platform & Manager Hardened, Ready for Pipeline  
+**Next Task**: Inference Engine Pipeline (Cache Integration)  
+**Overall Progress**: 3/30 tasks complete (10%)
