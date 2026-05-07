@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuse-config
+  namespace: fuse-system
+data:
+  config.toml: |
+    models_dir = "/data/models"
+    cache_dir = "/data/cache"
+    log_level = "info"
+    
+    [feature_flags]
+    agentic_coding = false
+    thinking_visualization = false
+    generative_ui = false
+    mcp_server = true
+    vulnerability_scanning = true
+    
+    [server]
+    host = "0.0.0.0"
+    port = 8080
+    max_connections = 1000
+    
+    [server.rate_limit]
+    requests_per_minute = 120
+    
+    [inference]
+    default_max_tokens = 2048
+    default_temperature = 0.7
+    context_window = 4096
+    
+    # OpenTelemetry configuration
+    [observability]
+    enabled = true
+    otlp_endpoint = "http://opentelemetry-collector.observability:4317"
+    service_name = "fuse-api"
+    trace_sample_rate = 1.0
+    
+    # Metrics configuration
+    [metrics]
+    enabled = true
+    prometheus_port = 9090

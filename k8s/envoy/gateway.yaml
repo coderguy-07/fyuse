@@ -1,0 +1,182 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: fuse-gateway
+  namespace: gateway-system
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  gatewayClassName: envoy
+  listeners:
+  - name: https
+    protocol: HTTPS
+    port: 443
+    hostname: "*.fuse.example.com"
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: fuse-tls-cert
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: fuse-api-route
+  namespace: fuse-system
+spec:
+  parentRefs:
+  - name: fuse-gateway
+    namespace: gateway-system
+  hostnames:
+  - "api.fuse.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    backendRefs:
+    - name: fuse-api
+      port: 8080
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        add:
+        - name: X-Forwarded-Proto
+          value: https
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        add:
+        - name: Strict-Transport-Security
+          value: max-age=31536000; includeSubDomains
+  
+  - matches:
+    - path:
+        type: Exact
+        value: /health
+    - path:
+        type: Exact
+        value: /ready
+    backendRefs:
+    - name: fuse-api
+      port: 8080
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: fuse-security-policy
+  namespace: fuse-system
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: fuse-api-route
+  
+  # Rate limiting
+  rateLimit:
+    type: Global
+    global:
+      rules:
+      - clientSelectors:
+        - headers:
+          - name: X-Forwarded-For
+            type: Distinct
+        limit:
+          requests: 100
+          unit: Minute
+  
+  # CORS
+  cors:
+    allowOrigins:
+    - "https://*.fuse.example.com"
+    allowMethods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    allowHeaders:
+    - Content-Type
+    - Authorization
+    exposeHeaders:
+    - X-Request-ID
+    maxAge: 86400
+  
+  # JWT Authentication
+  jwt:
+    providers:
+    - name: auth0
+      issuer: https://your-tenant.auth0.com/
+      audiences:
+      - https://api.fuse.example.com
+      remoteJWKS:
+        uri: https://your-tenant.auth0.com/.well-known/jwks.json
+  
+  # mTLS
+  mtls:
+    mode: Strict
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: fuse-backend-policy
+  namespace: fuse-system
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: fuse-api-route
+  
+  # Load balancing
+  loadBalancer:
+    type: LeastRequest
+    slowStart:
+      window: 30s
+  
+  # Circuit breaking
+  circuitBreaker:
+    maxConnections: 1024
+    maxPendingRequests: 1024
+    maxRequests: 1024
+    maxRetries: 3
+  
+  # Timeouts
+  timeout:
+    tcp:
+      connectTimeout: 10s
+    http:
+      requestTimeout: 30s
+  
+  # Retry policy
+  retry:
+    numRetries: 3
+    retryOn:
+    - 5xx
+    - reset
+    - connect-failure
+    - retriable-status-codes
+    perRetry:
+      timeout: 5s
+      backOff:
+        baseInterval: 1s
+        maxInterval: 10s
+  
+  # Health checks
+  healthCheck:
+    active:
+      type: HTTP
+      http:
+        path: /health
+        expectedStatuses:
+        - 200
+      timeout: 3s
+      interval: 10s
+      unhealthyThreshold: 3
+      healthyThreshold: 2

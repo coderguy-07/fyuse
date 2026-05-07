@@ -1,0 +1,46 @@
+# Fuse Configuration Example (YAML format)
+# Copy this file to ~/.fuse/config.yaml and customize as needed
+
+# Directory where downloaded models are stored
+models_dir: ~/.fuse/models
+
+# Directory for temporary files and cache
+cache_dir: ~/.fuse/cache
+
+# Logging level: trace, debug, info, warn, error
+log_level: info
+
+# Feature flags - enable/disable optional features
+feature_flags:
+  agentic_coding: false
+  thinking_visualization: false
+  generative_ui: false
+  mcp_server: false
+  vulnerability_scanning: false
+
+# Server configuration for inference API
+server:
+  host: 127.0.0.1
+  port: 8080
+  max_connections: 100
+  rate_limit:
+    requests_per_minute: 60
+  # Optional TLS configuration
+  # tls:
+  #   cert_path: /path/to/cert.pem
+  #   key_path: /path/to/key.pem
+
+# Model registries
+registries:
+  - name: huggingface
+    url: https://huggingface.co
+    auth_required: false
+  - name: unsloth
+    url: https://unsloth.ai
+    auth_required: false
+
+# Inference configuration
+inference:
+  default_max_tokens: 2048
+  default_temperature: 0.7
+  context_window: 4096

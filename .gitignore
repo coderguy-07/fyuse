@@ -1,0 +1,439 @@
+# Fuse - Comprehensive .gitignore
+# Generated for AI Model Management Platform
+
+# ============================================
+# Rust / Cargo
+# ============================================
+# Build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (uncomment if building a library)
+# Cargo.lock
+
+# Cargo build cache
+.cargo/
+.cargo-cache/
+
+# ============================================
+# IDE / Editor
+# ============================================
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# IntelliJ IDEA / CLion / RustRover
+.idea/
+*.iml
+*.iws
+*.ipr
+.idea_modules/
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Zed
+.zed/
+
+# ============================================
+# Operating System
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================
+# Fuse Application Data
+# ============================================
+# User data directory
+.fuse/
+!.fuse/specs/
+.fuse/models/
+.fuse/cache/
+.fuse/logs/
+.fuse/embeddings/
+.fuse/vibe/
+.fuse/*.redb
+.fuse/*.db
+.fuse/*.sqlite
+.fuse/*.sqlite3
+
+# Configuration files with sensitive data
+config.toml
+config.yaml
+config.yml
+.env
+.env.local
+.env.*.local
+secrets.toml
+credentials.toml
+
+# Keep example configs
+!config.example.toml
+!config.example.yaml
+
+# ============================================
+# AI Models and Large Files
+# ============================================
+# Model files
+*.bin
+*.gguf
+*.ggml
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pb
+*.onnx
+*.tflite
+*.mlmodel
+*.mar
+
+# Model directories
+models/
+checkpoints/
+weights/
+pretrained/
+
+# Embeddings and vectors
+*.npy
+*.npz
+*.pkl
+*.pickle
+embeddings/
+vectors/
+
+# ============================================
+# Sensitive Data and Credentials
+# ============================================
+# API keys and tokens
+*.key
+*.pem
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*_rsa
+*_rsa.pub
+*_dsa
+*_dsa.pub
+*_ecdsa
+*_ecdsa.pub
+*_ed25519
+*_ed25519.pub
+
+# Authentication files
+.netrc
+.npmrc
+.pypirc
+auth.json
+credentials.json
+service-account.json
+gcloud-service-key.json
+
+# AWS credentials
+.aws/
+aws-credentials
+aws-config
+
+# Azure credentials
+.azure/
+
+# GCP credentials
+.gcp/
+gcp-credentials.json
+
+# Hugging Face tokens
+.huggingface/
+hf_token
+huggingface_token
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.redb
+*.lmdb
+*.mdb
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+
+# ============================================
+# Logs and Temporary Files
+# ============================================
+# Log files
+*.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+cache/
+
+# ============================================
+# Testing and Coverage
+# ============================================
+# Test artifacts
+test-results/
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+*.cover
+*.py,cover
+.nyc_output/
+
+# Benchmark results
+benchmarks/
+*.bench
+
+# Profiling data
+*.prof
+*.profdata
+flamegraph.svg
+perf.data*
+
+# ============================================
+# Build and Distribution
+# ============================================
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+*.dylib
+
+# ============================================
+# Documentation
+# ============================================
+# Generated documentation
+docs/_build/
+docs/.doctrees/
+site/
+.mkdocs_cache/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# ============================================
+# Dependencies
+# ============================================
+# Node modules (if using Node for UI)
+node_modules/
+jspm_packages/
+bower_components/
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+.pyenv/
+
+# ============================================
+# CI/CD
+# ============================================
+# GitHub Actions
+.github/workflows/*.log
+
+# GitLab CI
+.gitlab-ci-local/
+
+# ============================================
+# Security Scanning
+# ============================================
+# Vulnerability scan results
+trivy-results.json
+trivy-results.html
+vulnerability-report.*
+security-scan.*
+sbom.*
+cyclonedx.*
+
+# ============================================
+# Performance and Monitoring
+# ============================================
+# Profiling and tracing
+*.trace
+*.prof
+*.cpuprofile
+*.heapprofile
+*.memprofile
+
+# Metrics and monitoring
+metrics/
+prometheus/
+grafana/
+
+# ============================================
+# Kubernetes and Docker
+# ============================================
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes secrets
+*-secret.yaml
+*-secrets.yaml
+sealed-secrets.yaml
+
+# Helm
+charts/*.tgz
+.helm/
+
+# ============================================
+# Miscellaneous
+# ============================================
+# Compressed files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.bz2
+*.xz
+
+# Media files (unless needed)
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.mp3
+*.wav
+*.flac
+
+# Large datasets
+datasets/
+data/
+*.csv
+*.tsv
+*.parquet
+
+# ============================================
+# Project Specific
+# ============================================
+# Fuse specific temporary files
+.fuse-tmp/
+fuse-debug/
+fuse-test-data/
+
+# Claude Code
+claude.json
+
+# User-specific notes
+NOTES.md
+TODO.md
+SCRATCH.md
+
+# Local development overrides
+local.toml
+dev.toml
+test.toml
+
+# Generated files
+generated/
+auto-generated/
+
+# ============================================
+# Keep Important Files
+# ============================================
+# Force include important files
+!.gitignore
+!.gitattributes
+!.github/
+!.kiro/
+!README.md
+!LICENSE
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md

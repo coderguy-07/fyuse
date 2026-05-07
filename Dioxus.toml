@@ -1,0 +1,28 @@
+[application]
+name = "fuse"
+default_platform = "desktop"
+out_dir = "dist"
+
+[web.app]
+title = "Fuse — AI System Manager"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []
+
+[web.watcher]
+watch_path = ["src/ui_dioxus"]
+reload_html = true
+
+# Dev builds: fast
+[web.wasm-opt]
+level = 0
+shrink_level = 0
+
+# Release builds: maximum optimization
+[web.wasm-opt.release]
+level = 4
+shrink_level = 2

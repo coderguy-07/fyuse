@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --lib
+      - run: cargo test --test feature_gates
+      - run: cargo test --test integration
+
+  bench-compile:
+    name: Benchmarks compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench --no-run
+
+  feature-check:
+    name: Feature combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --no-default-features --features edge
+      - run: cargo check --features dioxus-ui
+      - run: cargo check --all-features
+
+  # Cross-platform builds for edge devices
+  cross-build:
+    name: Cross-compile (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            name: Linux ARM64 (Raspberry Pi 5, Jetson)
+          - target: armv7-unknown-linux-gnueabihf
+            name: Linux ARMv7 (Raspberry Pi 3/4)
+          - target: x86_64-unknown-linux-gnu
+            name: Linux x86_64
+          - target: aarch64-apple-darwin
+            name: macOS ARM64 (Apple Silicon)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cross-${{ matrix.target }}
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build edge binary
+        run: cross build --target ${{ matrix.target }} --features edge --no-default-features --release
+      - name: Check binary size
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          SIZE=$(stat -c%s "target/${{ matrix.target }}/release/fuse" 2>/dev/null || echo "0")
+          echo "Binary size: $((SIZE / 1024 / 1024)) MB"
+          if [ "$SIZE" -gt 15728640 ]; then
+            echo "WARNING: Binary exceeds 15MB target"
+          fi
+
+  # Dioxus desktop + web builds
+  dioxus-build:
+    name: Dioxus UI (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: desktop
+            os: macos-latest
+          - platform: desktop
+            os: ubuntu-latest
+          - platform: desktop
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Dioxus desktop
+        run: cargo build --features dioxus-ui
+
+  # TUI build verification
+  tui-build:
+    name: TUI (ratatui)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --features tui
+      - run: cargo test --features tui --lib -- tui::
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,263 @@
+# Fuse Configuration Example
+# Copy this file to config.toml and customize with your values
+# IMPORTANT: config.toml is in .gitignore and will not be committed
+
+# ============================================
+# General Settings
+# ============================================
+[general]
+models_dir = "~/.fuse/models"
+cache_dir = "~/.fuse/cache"
+log_level = "info"  # trace, debug, info, warn, error
+
+# ============================================
+# Feature Flags
+# ============================================
+[feature_flags]
+agentic_coding = false
+thinking_visualization = false
+generative_ui = true
+mcp_server = false
+vulnerability_scanning = true
+
+# ============================================
+# Server Configuration
+# ============================================
+[server]
+host = "127.0.0.1"
+port = 8080
+max_connections = 100
+
+[server.rate_limit]
+requests_per_minute = 60
+
+# Optional TLS configuration
+# [server.tls]
+# cert_path = "/path/to/cert.pem"
+# key_path = "/path/to/key.pem"
+
+# ============================================
+# Authentication (Use Environment Variables!)
+# ============================================
+[auth]
+# ✅ GOOD - Use environment variables
+api_key = "${FUSE_API_KEY}"
+secret = "${FUSE_SECRET}"
+
+# ✅ GOOD - Use placeholders for examples
+# api_key = "YOUR_API_KEY_HERE"
+# secret = "YOUR_SECRET_HERE"
+
+# ❌ BAD - Never hardcode real credentials!
+# api_key = "sk-abc123xyz789"  # This will be blocked by pre-commit hooks!
+
+# ============================================
+# Model Registries
+# ============================================
+[[registries]]
+name = "huggingface"
+url = "https://huggingface.co"
+auth_required = false
+# auth_token = "${HF_TOKEN}"  # Uncomment and set if needed
+
+[[registries]]
+name = "unsloth"
+url = "https://unsloth.ai"
+auth_required = false
+
+# Example private registry
+# [[registries]]
+# name = "private"
+# url = "https://models.company.com"
+# auth_required = true
+# auth_token = "${PRIVATE_REGISTRY_TOKEN}"
+
+# ============================================
+# Inference Configuration
+# ============================================
+[inference]
+default_max_tokens = 2048
+default_temperature = 0.7
+context_window = 4096
+
+# ============================================
+# UI Configuration
+# ============================================
+[ui]
+enabled = true
+host = "127.0.0.1"
+port = 3000
+theme = "auto"  # light, dark, auto
+layout = "sidebar-left"  # sidebar-left, sidebar-right, no-sidebar
+
+[ui.history]
+enabled = true
+retention_days = 90  # 0 = unlimited
+max_conversations = 1000
+search_enabled = true
+export_enabled = true
+
+[ui.context]
+max_input_tokens = 4096
+max_output_tokens = 2048
+show_token_count = true
+truncate_strategy = "sliding_window"  # sliding_window, summarize, error
+
+[ui.markdown]
+enabled = true
+code_highlighting = true
+code_theme = "github-dark"
+latex_enabled = true
+mermaid_enabled = true
+table_enabled = true
+
+[ui.features]
+copy_code_button = true
+regenerate_button = true
+edit_message = true
+branch_conversations = true
+share_conversations = true
+export_formats = ["markdown", "json", "pdf"]
+
+[ui.performance]
+virtual_scrolling = true
+lazy_load_images = true
+service_worker = true
+cache_responses = true
+
+[ui.accessibility]
+wcag_compliance = "AA"
+keyboard_navigation = true
+screen_reader_support = true
+high_contrast_mode = false
+
+[ui.branding]
+app_name = "Fuse"
+logo_path = ""
+primary_color = "#3b82f6"
+secondary_color = "#8b5cf6"
+font_family = "Inter, system-ui, sans-serif"
+
+# ============================================
+# API Configuration
+# ============================================
+[api]
+ollama_compatible = true
+base_path = "/api"
+rate_limit_per_minute = 60
+max_concurrent_requests = 100
+streaming_enabled = true
+compression_enabled = true
+
+[api.performance]
+response_cache_ttl = 300  # seconds
+connection_pool_size = 50
+request_timeout = 30  # seconds
+
+# ============================================
+# RAG (Retrieval-Augmented Generation)
+# ============================================
+[rag]
+enabled = false
+embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+chunk_size = 512
+chunk_overlap = 50
+max_results = 5
+
+# ============================================
+# Workflow Configuration
+# ============================================
+[workflow]
+enabled = false
+max_iterations = 10
+timeout_seconds = 300
+auto_fix_enabled = true
+
+# ============================================
+# Security Configuration
+# ============================================
+[security]
+# Authentication
+require_auth = false
+auth_method = "api_key"  # api_key, jwt, oauth
+
+# Rate limiting
+enable_rate_limiting = true
+rate_limit_window = 60  # seconds
+
+# Input validation
+max_input_length = 10000
+sanitize_inputs = true
+
+# Logging
+audit_log_enabled = true
+log_sensitive_data = false
+
+# ============================================
+# Monitoring and Observability
+# ============================================
+[monitoring]
+enabled = false
+metrics_port = 9090
+health_check_path = "/health"
+
+# OpenTelemetry configuration
+[monitoring.opentelemetry]
+enabled = false
+endpoint = "http://localhost:4317"
+service_name = "fuse"
+
+# ============================================
+# Database Configuration
+# ============================================
+[database]
+path = "~/.fuse/fuse.redb"
+max_size_mb = 1000
+backup_enabled = true
+backup_interval_hours = 24
+
+# ============================================
+# Advanced Settings
+# ============================================
+[advanced]
+# Performance tuning
+worker_threads = 0  # 0 = auto-detect
+max_blocking_threads = 512
+
+# Memory management
+model_cache_size = 3  # Number of models to keep in memory
+memory_limit_gb = 0  # 0 = unlimited
+
+# Networking
+connection_timeout = 30
+read_timeout = 60
+max_retries = 3
+
+# ============================================
+# Development Settings (Not for Production!)
+# ============================================
+[development]
+debug_mode = false
+hot_reload = false
+mock_models = false
+verbose_logging = false
+
+# ============================================
+# Environment-Specific Overrides
+# ============================================
+# You can override settings based on environment
+# Set FUSE_ENV environment variable to activate
+
+[environments.development]
+log_level = "debug"
+debug_mode = true
+
+[environments.staging]
+log_level = "info"
+require_auth = true
+
+[environments.production]
+log_level = "warn"
+require_auth = true
+audit_log_enabled = true
+rate_limit_per_minute = 30

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(ls /Volumes/hex/ai-fuse/fuse/src/*/mod.rs)",
+      "Bash(ls -d /Volumes/hex/ai-fuse/fuse/src/*/)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(grep -v \"^\\\\s*=$\")",
+      "Bash(git:*)",
+      "Bash(cargo bench:*)",
+      "Bash(cargo build:*)"
+    ]
+  }
+}

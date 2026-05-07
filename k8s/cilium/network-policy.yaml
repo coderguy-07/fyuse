@@ -1,0 +1,111 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: fuse-api-policy
+  namespace: fuse-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app: fuse-api
+  
+  # Ingress rules
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        app: envoy-gateway
+        io.kubernetes.pod.namespace: gateway-system
+    toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP
+      rules:
+        http:
+        - method: "GET"
+          path: "/health"
+        - method: "GET"
+          path: "/ready"
+        - method: "GET"
+          path: "/metrics"
+        - method: "POST"
+          path: "/api/.*"
+        - method: "GET"
+          path: "/api/.*"
+  
+  # Allow Prometheus scraping
+  - fromEndpoints:
+    - matchLabels:
+        app: prometheus
+        io.kubernetes.pod.namespace: observability
+    toPorts:
+    - ports:
+      - port: "9090"
+        protocol: TCP
+  
+  # Egress rules
+  egress:
+  # Allow DNS
+  - toEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+    toPorts:
+    - ports:
+      - port: "53"
+        protocol: UDP
+      rules:
+        dns:
+        - matchPattern: "*"
+  
+  # Allow OpenTelemetry Collector
+  - toEndpoints:
+    - matchLabels:
+        app: opentelemetry-collector
+        io.kubernetes.pod.namespace: observability
+    toPorts:
+    - ports:
+      - port: "4317"
+        protocol: TCP
+      - port: "4318"
+        protocol: TCP
+  
+  # Allow external model registries (HuggingFace, etc)
+  - toFQDNs:
+    - matchName: "huggingface.co"
+    - matchPattern: "*.huggingface.co"
+    toPorts:
+    - ports:
+      - port: "443"
+        protocol: TCP
+  
+  # Allow communication with other fuse-api pods
+  - toEndpoints:
+    - matchLabels:
+        app: fuse-api
+        io.kubernetes.pod.namespace: fuse-system
+    toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: fuse-mtls-policy
+spec:
+  endpointSelector:
+    matchLabels:
+      app: fuse-api
+  
+  # Enforce mTLS for all service-to-service communication
+  egressDeny:
+  - toEndpoints:
+    - matchLabels:
+        io.cilium.k8s.policy.cluster: default
+    toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP
+      rules:
+        http:
+        - headers:
+          - "X-Forwarded-Client-Cert"

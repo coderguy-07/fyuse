@@ -1,0 +1,1272 @@
+openapi: 3.1.0
+info:
+  title: Fuse AI System Manager API
+  version: 0.1.0
+  description: >
+    Fuse is an open-source AI system manager exposing three compatibility layers
+    (Ollama, OpenAI, Anthropic) plus native system endpoints.  A single Rust
+    binary replaces Ollama + vLLM and runs on any device from Raspberry Pi to
+    data center.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  contact:
+    name: Fuse Maintainers
+
+servers:
+  - url: http://localhost:11434
+    description: Local development server (default Ollama-compatible port)
+
+tags:
+  - name: Ollama
+    description: Ollama-compatible endpoints (NDJSON streaming)
+  - name: OpenAI
+    description: OpenAI-compatible endpoints (SSE streaming)
+  - name: Anthropic
+    description: Anthropic-compatible endpoints (SSE streaming)
+  - name: System
+    description: Health checks and real-time WebSocket streaming
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key passed via the X-API-Key header.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token passed via the Authorization header.
+
+  headers:
+    X-RateLimit-Remaining:
+      description: Number of requests remaining in the current window.
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: UTC epoch seconds when the rate-limit window resets.
+      schema:
+        type: integer
+
+  schemas:
+    # ------------------------------------------------------------------
+    # Shared / Error
+    # ------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+          description: Machine-readable error code.
+          examples: ["rate_limit_exceeded"]
+        message:
+          type: string
+          description: Human-readable error description.
+          examples: ["Rate limit exceeded. Please try again later."]
+        remediation:
+          type: string
+          description: Suggested action to resolve the error.
+          examples: ["Wait 30 seconds and retry."]
+
+    # ------------------------------------------------------------------
+    # Ollama schemas
+    # ------------------------------------------------------------------
+    OllamaGenerateRequest:
+      type: object
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          examples: ["llama3:8b"]
+        prompt:
+          type: string
+        stream:
+          type: boolean
+          default: false
+        system:
+          type: string
+        template:
+          type: string
+        context:
+          type: array
+          items:
+            type: integer
+            format: uint32
+        options:
+          type: object
+          description: Model-specific options (temperature, top_k, etc.).
+
+    OllamaGenerateResponse:
+      type: object
+      required: [model, created_at, response, done]
+      properties:
+        model:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        response:
+          type: string
+        done:
+          type: boolean
+        context:
+          type: array
+          items:
+            type: integer
+            format: uint32
+        total_duration:
+          type: integer
+          format: uint64
+        load_duration:
+          type: integer
+          format: uint64
+        prompt_eval_count:
+          type: integer
+          format: uint32
+        eval_count:
+          type: integer
+          format: uint32
+        eval_duration:
+          type: integer
+          format: uint64
+
+    OllamaChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+            description: Base64-encoded image data.
+
+    OllamaChatRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/OllamaChatMessage"
+        stream:
+          type: boolean
+          default: false
+        options:
+          type: object
+
+    OllamaChatResponse:
+      type: object
+      required: [model, created_at, message, done]
+      properties:
+        model:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        message:
+          $ref: "#/components/schemas/OllamaChatMessage"
+        done:
+          type: boolean
+        total_duration:
+          type: integer
+          format: uint64
+        eval_count:
+          type: integer
+          format: uint32
+        eval_duration:
+          type: integer
+          format: uint64
+
+    ModelDetails:
+      type: object
+      required: [format, family, parameter_size, quantization_level]
+      properties:
+        format:
+          type: string
+          examples: ["gguf"]
+        family:
+          type: string
+        families:
+          type: array
+          items:
+            type: string
+        parameter_size:
+          type: string
+          examples: ["7B"]
+        quantization_level:
+          type: string
+          examples: ["Q4_K_M"]
+
+    ModelInfo:
+      type: object
+      required: [name, modified_at, size, digest, details]
+      properties:
+        name:
+          type: string
+        modified_at:
+          type: string
+          format: date-time
+        size:
+          type: integer
+          format: uint64
+        digest:
+          type: string
+        details:
+          $ref: "#/components/schemas/ModelDetails"
+
+    TagsResponse:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelInfo"
+
+    OllamaPullRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          examples: ["llama3:8b"]
+        insecure:
+          type: boolean
+          default: false
+        stream:
+          type: boolean
+          default: false
+
+    OllamaPullProgress:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        digest:
+          type: string
+        total:
+          type: integer
+          format: uint64
+        completed:
+          type: integer
+          format: uint64
+
+    ShowResponse:
+      type: object
+      required: [modelfile, parameters, template, details]
+      properties:
+        modelfile:
+          type: string
+        parameters:
+          type: string
+        template:
+          type: string
+        details:
+          $ref: "#/components/schemas/ModelDetails"
+
+    OllamaEmbeddingsRequest:
+      type: object
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        options:
+          type: object
+
+    OllamaEmbeddingsResponse:
+      type: object
+      required: [embedding]
+      properties:
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+
+    # ------------------------------------------------------------------
+    # OpenAI schemas
+    # ------------------------------------------------------------------
+    OpenAIChatMessage:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool]
+        content:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCall"
+        tool_call_id:
+          type: string
+        name:
+          type: string
+
+    ToolCall:
+      type: object
+      required: [id, type, function]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [function]
+        function:
+          $ref: "#/components/schemas/ToolCallFunction"
+
+    ToolCallFunction:
+      type: object
+      required: [name, arguments]
+      properties:
+        name:
+          type: string
+        arguments:
+          type: string
+          description: JSON-encoded function arguments.
+
+    ToolDefinition:
+      type: object
+      required: [type, function]
+      properties:
+        type:
+          type: string
+          enum: [function]
+        function:
+          $ref: "#/components/schemas/FunctionDefinition"
+
+    FunctionDefinition:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          description: JSON Schema for function parameters.
+
+    ResponseFormat:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [text, json_object]
+
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          examples: ["gpt-4"]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAIChatMessage"
+        temperature:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 2
+        top_p:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        max_tokens:
+          type: integer
+          format: uint32
+        stream:
+          type: boolean
+          default: false
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolDefinition"
+        tool_choice:
+          description: '"auto", "none", "required", or a specific function object.'
+        response_format:
+          $ref: "#/components/schemas/ResponseFormat"
+        stop:
+          description: String or array of strings.
+        n:
+          type: integer
+          format: uint32
+          default: 1
+        presence_penalty:
+          type: number
+          format: double
+        frequency_penalty:
+          type: number
+          format: double
+        seed:
+          type: integer
+          format: uint64
+
+    Usage:
+      type: object
+      required: [prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+          format: uint32
+        completion_tokens:
+          type: integer
+          format: uint32
+        total_tokens:
+          type: integer
+          format: uint32
+
+    ChatCompletionChoice:
+      type: object
+      required: [index, message, finish_reason]
+      properties:
+        index:
+          type: integer
+          format: uint32
+        message:
+          $ref: "#/components/schemas/OpenAIChatMessage"
+        finish_reason:
+          type: string
+          enum: [stop, length, tool_calls, content_filter]
+
+    ChatCompletionResponse:
+      type: object
+      required: [id, object, created, model, choices, usage]
+      properties:
+        id:
+          type: string
+          examples: ["chatcmpl-abc123"]
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+          format: int64
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatCompletionChoice"
+        usage:
+          $ref: "#/components/schemas/Usage"
+
+    ChatCompletionDelta:
+      type: object
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCall"
+
+    ChatCompletionChunkChoice:
+      type: object
+      required: [index, delta]
+      properties:
+        index:
+          type: integer
+          format: uint32
+        delta:
+          $ref: "#/components/schemas/ChatCompletionDelta"
+        finish_reason:
+          type: string
+          enum: [stop, length, tool_calls, content_filter, null]
+
+    ChatCompletionChunk:
+      type: object
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion.chunk]
+        created:
+          type: integer
+          format: int64
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatCompletionChunkChoice"
+
+    EmbeddingRequest:
+      type: object
+      required: [model, input]
+      properties:
+        model:
+          type: string
+          examples: ["text-embedding-ada-002"]
+        input:
+          description: A string or array of strings to embed.
+        encoding_format:
+          type: string
+          enum: [float, base64]
+
+    EmbeddingData:
+      type: object
+      required: [object, embedding, index]
+      properties:
+        object:
+          type: string
+          enum: [embedding]
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+        index:
+          type: integer
+          format: uint32
+
+    EmbeddingUsage:
+      type: object
+      required: [prompt_tokens, total_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+          format: uint32
+        total_tokens:
+          type: integer
+          format: uint32
+
+    EmbeddingResponse:
+      type: object
+      required: [object, data, model, usage]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmbeddingData"
+        model:
+          type: string
+        usage:
+          $ref: "#/components/schemas/EmbeddingUsage"
+
+    ModelData:
+      type: object
+      required: [id, object, created, owned_by]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [model]
+        created:
+          type: integer
+          format: int64
+        owned_by:
+          type: string
+          examples: ["fuse"]
+
+    ModelsResponse:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelData"
+
+    # ------------------------------------------------------------------
+    # Anthropic schemas
+    # ------------------------------------------------------------------
+    AnthropicMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          description: A plain string or an array of content blocks.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: "#/components/schemas/AnthropicContentBlock"
+
+    AnthropicContentBlock:
+      discriminator:
+        propertyName: type
+      oneOf:
+        - $ref: "#/components/schemas/TextBlock"
+        - $ref: "#/components/schemas/ImageBlock"
+        - $ref: "#/components/schemas/ToolUseBlock"
+        - $ref: "#/components/schemas/ToolResultBlock"
+
+    TextBlock:
+      type: object
+      required: [type, text]
+      properties:
+        type:
+          type: string
+          enum: [text]
+        text:
+          type: string
+
+    ImageBlock:
+      type: object
+      required: [type, source]
+      properties:
+        type:
+          type: string
+          enum: [image]
+        source:
+          type: object
+          required: [type, media_type, data]
+          properties:
+            type:
+              type: string
+              enum: [base64]
+            media_type:
+              type: string
+              enum: [image/png, image/jpeg, image/gif, image/webp]
+            data:
+              type: string
+              format: byte
+
+    ToolUseBlock:
+      type: object
+      required: [type, id, name, input]
+      properties:
+        type:
+          type: string
+          enum: [tool_use]
+        id:
+          type: string
+        name:
+          type: string
+        input:
+          type: object
+
+    ToolResultBlock:
+      type: object
+      required: [type, tool_use_id]
+      properties:
+        type:
+          type: string
+          enum: [tool_result]
+        tool_use_id:
+          type: string
+        content:
+          type: string
+
+    MessageMetadata:
+      type: object
+      properties:
+        user_id:
+          type: string
+
+    MessagesRequest:
+      type: object
+      required: [model, messages, max_tokens]
+      properties:
+        model:
+          type: string
+          examples: ["claude-3-sonnet"]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicMessage"
+        max_tokens:
+          type: integer
+          format: uint32
+        system:
+          type: string
+        temperature:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        top_p:
+          type: number
+          format: double
+        top_k:
+          type: integer
+          format: uint32
+        stream:
+          type: boolean
+        stop_sequences:
+          type: array
+          items:
+            type: string
+        metadata:
+          $ref: "#/components/schemas/MessageMetadata"
+
+    AnthropicUsage:
+      type: object
+      required: [input_tokens, output_tokens]
+      properties:
+        input_tokens:
+          type: integer
+          format: uint32
+        output_tokens:
+          type: integer
+          format: uint32
+
+    MessagesResponse:
+      type: object
+      required: [id, type, role, content, model, usage]
+      properties:
+        id:
+          type: string
+          examples: ["msg_abc123"]
+        type:
+          type: string
+          enum: [message]
+        role:
+          type: string
+          enum: [assistant]
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicContentBlock"
+        model:
+          type: string
+        stop_reason:
+          type: string
+          enum: [end_turn, max_tokens, stop_sequence, tool_use, null]
+        stop_sequence:
+          type: string
+        usage:
+          $ref: "#/components/schemas/AnthropicUsage"
+
+    # ------------------------------------------------------------------
+    # System schemas
+    # ------------------------------------------------------------------
+    HealthResponse:
+      type: object
+      required: [status, version, uptime_seconds]
+      properties:
+        status:
+          type: string
+          examples: ["healthy"]
+        version:
+          type: string
+          examples: ["0.1.0"]
+        uptime_seconds:
+          type: integer
+          format: uint64
+
+    # ------------------------------------------------------------------
+    # WebSocket schemas
+    # ------------------------------------------------------------------
+    WsInferMessage:
+      type: object
+      required: [type, model, prompt]
+      properties:
+        type:
+          type: string
+          enum: [infer]
+        model:
+          type: string
+        prompt:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageInput"
+        parameters:
+          type: object
+          description: Inference parameters (max_tokens, temperature, etc.).
+
+    WsCancelMessage:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [cancel]
+
+    WsPingMessage:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [ping]
+
+    WsTokenResponse:
+      type: object
+      required: [type, text, is_final]
+      properties:
+        type:
+          type: string
+          enum: [token]
+        text:
+          type: string
+        id:
+          type: integer
+          format: uint32
+        is_final:
+          type: boolean
+
+    WsErrorResponse:
+      type: object
+      required: [type, message]
+      properties:
+        type:
+          type: string
+          enum: [error]
+        message:
+          type: string
+
+    WsPongResponse:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [pong]
+
+    WsCompleteResponse:
+      type: object
+      required: [type, prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        type:
+          type: string
+          enum: [complete]
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+
+    ImageInput:
+      type: object
+      required: [data, format]
+      properties:
+        data:
+          type: string
+          description: Base64-encoded image data.
+        format:
+          type: string
+          enum: [png, jpg, jpeg, gif, webp]
+
+security:
+  - ApiKeyHeader: []
+  - BearerAuth: []
+
+paths:
+  # ====================================================================
+  # Ollama endpoints
+  # ====================================================================
+  /api/generate:
+    post:
+      operationId: ollamaGenerate
+      tags: [Ollama]
+      summary: Generate a completion
+      description: >
+        Generate a completion for the given prompt. When `stream` is true the
+        response is NDJSON (application/x-ndjson) with one JSON object per line;
+        the final object has `done: true`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaGenerateRequest"
+      responses:
+        "200":
+          description: Completion result (or NDJSON stream when streaming).
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaGenerateResponse"
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/OllamaGenerateResponse"
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/chat:
+    post:
+      operationId: ollamaChat
+      tags: [Ollama]
+      summary: Chat completion
+      description: >
+        Send a chat conversation and receive an assistant reply.  Supports
+        NDJSON streaming when `stream` is true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaChatRequest"
+      responses:
+        "200":
+          description: Chat response.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaChatResponse"
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/OllamaChatResponse"
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/tags:
+    get:
+      operationId: ollamaTags
+      tags: [Ollama]
+      summary: List models
+      description: List all locally available models.
+      responses:
+        "200":
+          description: Model list.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagsResponse"
+
+  /api/pull:
+    post:
+      operationId: ollamaPull
+      tags: [Ollama]
+      summary: Pull a model
+      description: >
+        Download a model from the registry.  Response is NDJSON with progress
+        updates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaPullRequest"
+      responses:
+        "200":
+          description: Pull progress (NDJSON stream).
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/OllamaPullProgress"
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/show:
+    get:
+      operationId: ollamaShow
+      tags: [Ollama]
+      summary: Show model info
+      description: Return metadata for a specific model.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Model name (e.g. "llama3:8b").
+      responses:
+        "200":
+          description: Model information.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShowResponse"
+
+  /api/embeddings:
+    post:
+      operationId: ollamaEmbeddings
+      tags: [Ollama]
+      summary: Generate embeddings
+      description: Generate an embedding vector for the given prompt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaEmbeddingsRequest"
+      responses:
+        "200":
+          description: Embedding vector.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaEmbeddingsResponse"
+
+  # ====================================================================
+  # OpenAI endpoints
+  # ====================================================================
+  /v1/chat/completions:
+    post:
+      operationId: openaiChatCompletions
+      tags: [OpenAI]
+      summary: Chat completions
+      description: >
+        Create a chat completion.  When `stream` is true the response is
+        Server-Sent Events (text/event-stream) with `ChatCompletionChunk`
+        objects; the stream ends with a `data: [DONE]` sentinel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: Chat completion or SSE stream.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionResponse"
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionChunk"
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/embeddings:
+    post:
+      operationId: openaiEmbeddings
+      tags: [OpenAI]
+      summary: Create embeddings
+      description: Generate embedding vectors for the given input.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbeddingRequest"
+      responses:
+        "200":
+          description: Embedding result.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingResponse"
+
+  /v1/models:
+    get:
+      operationId: openaiListModels
+      tags: [OpenAI]
+      summary: List models
+      description: List all models available through the OpenAI-compatible API.
+      responses:
+        "200":
+          description: Model list.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+
+  # ====================================================================
+  # Anthropic endpoints
+  # ====================================================================
+  /v1/messages:
+    post:
+      operationId: anthropicMessages
+      tags: [Anthropic]
+      summary: Create a message
+      description: >
+        Send a structured conversation and receive an assistant message.  When
+        `stream` is true the response is Server-Sent Events following the
+        Anthropic streaming protocol (event types: message_start,
+        content_block_start, content_block_delta, content_block_stop,
+        message_delta, message_stop).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessagesRequest"
+      responses:
+        "200":
+          description: Messages response or SSE stream.
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesResponse"
+            text/event-stream:
+              schema:
+                description: >
+                  SSE stream of Anthropic streaming events. Each event has an
+                  `event` field (message_start, content_block_start,
+                  content_block_delta, content_block_stop, message_delta,
+                  message_stop) and a JSON `data` payload.
+                type: object
+        "401":
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ====================================================================
+  # System endpoints
+  # ====================================================================
+  /health:
+    get:
+      operationId: healthCheck
+      tags: [System]
+      summary: Health check
+      description: Returns service health, version, and uptime.
+      security: []
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /ws:
+    get:
+      operationId: websocketStream
+      tags: [System]
+      summary: WebSocket streaming inference
+      description: >
+        Upgrade to a WebSocket connection for real-time streaming inference.
+        The client sends JSON messages with a `type` field (`infer`, `cancel`,
+        `ping`).  The server responds with `token`, `error`, `pong`, or
+        `complete` messages.
+
+
+        **Client message types:**
+
+        - `infer` — start inference (fields: model, prompt, images, parameters)
+
+        - `cancel` — cancel the current inference
+
+        - `ping` — keepalive
+
+
+        **Server message types:**
+
+        - `token` — a generated token (fields: text, id, is_final)
+
+        - `error` — an error occurred (field: message)
+
+        - `pong` — reply to ping
+
+        - `complete` — inference finished (fields: prompt_tokens,
+        completion_tokens, total_tokens)
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket upgrade).

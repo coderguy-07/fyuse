@@ -1,0 +1,222 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observability
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      
+      # Prometheus receiver for scraping
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: 'fuse-api'
+            kubernetes_sd_configs:
+            - role: pod
+              namespaces:
+                names:
+                - fuse-system
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+      
+      # Hubble flow receiver
+      hubble:
+        endpoint: hubble-relay.kube-system:4245
+        tls:
+          insecure: false
+          ca_file: /etc/hubble/ca.crt
+          cert_file: /etc/hubble/tls.crt
+          key_file: /etc/hubble/tls.key
+    
+    processors:
+      # Batch processor
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+      
+      # Memory limiter
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+        spike_limit_mib: 128
+      
+      # Resource processor
+      resource:
+        attributes:
+        - key: service.namespace
+          value: fuse-system
+          action: upsert
+        - key: deployment.environment
+          value: production
+          action: upsert
+      
+      # Span processor
+      span:
+        name:
+          to_attributes:
+            rules:
+            - ^\/api\/(?P<api_version>v\d+)\/(?P<resource>\w+).*
+      
+      # Attributes processor
+      attributes:
+        actions:
+        - key: http.user_agent
+          action: delete
+        - key: net.peer.ip
+          action: hash
+    
+    exporters:
+      # Prometheus exporter
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: fuse
+        const_labels:
+          environment: production
+      
+      # Prometheus remote write
+      prometheusremotewrite:
+        endpoint: http://prometheus.observability:9090/api/v1/write
+        tls:
+          insecure: true
+      
+      # Loki for logs
+      loki:
+        endpoint: http://loki.observability:3100/loki/api/v1/push
+        labels:
+          attributes:
+            service.name: ""
+            service.namespace: ""
+            log.level: ""
+      
+      # Jaeger for traces
+      jaeger:
+        endpoint: jaeger-collector.observability:14250
+        tls:
+          insecure: true
+      
+      # OTLP exporter (for Tempo)
+      otlp/tempo:
+        endpoint: tempo.observability:4317
+        tls:
+          insecure: true
+      
+      # Logging exporter (for debugging)
+      logging:
+        loglevel: info
+    
+    service:
+      pipelines:
+        # Traces pipeline
+        traces:
+          receivers: [otlp, hubble]
+          processors: [memory_limiter, batch, resource, span, attributes]
+          exporters: [jaeger, otlp/tempo, logging]
+        
+        # Metrics pipeline
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [memory_limiter, batch, resource]
+          exporters: [prometheus, prometheusremotewrite]
+        
+        # Logs pipeline
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, resource]
+          exporters: [loki, logging]
+      
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opentelemetry-collector
+  namespace: observability
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: opentelemetry-collector
+  template:
+    metadata:
+      labels:
+        app: opentelemetry-collector
+    spec:
+      serviceAccountName: opentelemetry-collector
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.91.0
+        args:
+        - --config=/conf/config.yaml
+        ports:
+        - name: otlp-grpc
+          containerPort: 4317
+        - name: otlp-http
+          containerPort: 4318
+        - name: prometheus
+          containerPort: 8889
+        - name: metrics
+          containerPort: 8888
+        volumeMounts:
+        - name: config
+          mountPath: /conf
+        - name: hubble-certs
+          mountPath: /etc/hubble
+          readOnly: true
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+      - name: hubble-certs
+        secret:
+          secretName: hubble-relay-client-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentelemetry-collector
+  namespace: observability
+spec:
+  selector:
+    app: opentelemetry-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: otlp-grpc
+  - name: otlp-http
+    port: 4318
+    targetPort: otlp-http
+  - name: prometheus
+    port: 8889
+    targetPort: prometheus
+  - name: metrics
+    port: 8888
+    targetPort: metrics

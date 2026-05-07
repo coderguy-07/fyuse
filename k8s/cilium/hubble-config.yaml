@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hubble-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    # Hubble server configuration
+    server:
+      address: ":4244"
+      tls:
+        enabled: true
+        auto:
+          enabled: true
+          method: cronJob
+          certValidityDuration: 26280h
+    
+    # Metrics configuration
+    metrics:
+      enabled:
+      - dns
+      - drop
+      - tcp
+      - flow
+      - icmp
+      - http
+      
+      # HTTP metrics
+      http:
+        - exemplars: true
+          labelsContext:
+          - source_namespace
+          - source_workload
+          - destination_namespace
+          - destination_workload
+          - traffic_direction
+      
+      # Port for metrics
+      port: 9965
+    
+    # Flow export to OpenTelemetry
+    export:
+      fileMaxSizeMb: 10
+      fileMaxBackups: 5
+      fieldMask:
+      - time
+      - source
+      - destination
+      - verdict
+      - l4
+      - l7
+      - is_reply
+      - Summary
+      
+      # Export to OTLP
+      otlp:
+        enabled: true
+        endpoint: "opentelemetry-collector.observability:4317"
+        timeout: 10s
+        retry:
+          enabled: true
+          maxElapsedTime: 1m

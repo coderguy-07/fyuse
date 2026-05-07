@@ -1,0 +1,32 @@
+# Build artifacts
+target/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Kubernetes
+k8s/
+deploy/
+
+# Test files
+tests/
+
+# Local config
+.fuse/
+config.toml
+config.yaml

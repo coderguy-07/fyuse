@@ -1,0 +1,74 @@
+# Fuse Configuration File
+# This file will be copied to ~/.fuse/config.toml during installation
+# You can modify this file directly or it will be configured interactively on first run
+
+# Directory where downloaded models are stored
+models_dir = "~/.fuse/models"
+
+# Directory for temporary files and cache
+cache_dir = "~/.fuse/cache"
+
+# Logging level: trace, debug, info, warn, error
+log_level = "info"
+
+# Feature Flags - Enable/disable optional features
+[feature_flags]
+# Automated workflow execution with fix-compile-test loops
+agentic_coding = false
+
+# Display model thinking and planning stages in real-time
+thinking_visualization = false
+
+# Interactive UI with real-time action feedback
+generative_ui = false
+
+# Model Context Protocol server support
+mcp_server = false
+
+# Scan models for security vulnerabilities
+vulnerability_scanning = false
+
+# Server Configuration
+[server]
+# Host address to bind the server
+host = "127.0.0.1"
+
+# Port number for the inference server
+port = 8080
+
+# Maximum number of concurrent connections
+max_connections = 100
+
+# Rate limiting configuration
+[server.rate_limit]
+# Maximum requests per minute per client
+requests_per_minute = 60
+
+# TLS/SSL Configuration (optional)
+# Uncomment and configure to enable HTTPS
+# [server.tls]
+# cert_path = "~/.fuse/certs/cert.pem"
+# key_path = "~/.fuse/certs/key.pem"
+
+# Model Registries
+# Add custom model registries here
+# [[registries]]
+# name = "huggingface"
+# url = "https://huggingface.co"
+# auth_required = false
+
+# [[registries]]
+# name = "custom-registry"
+# url = "https://my-registry.example.com"
+# auth_required = true
+
+# Inference Configuration
+[inference]
+# Default maximum tokens to generate
+default_max_tokens = 2048
+
+# Default temperature for generation (0.0 - 1.0)
+default_temperature = 0.7
+
+# Context window size
+context_window = 4096
