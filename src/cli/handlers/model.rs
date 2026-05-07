@@ -9,19 +9,106 @@ pub async fn handle_pull(
     config: &FuseConfig,
     _feature_manager: &FeatureFlagManager,
 ) -> Result<()> {
-    // Validate model name
+    use crate::model::{Auth, ModelManager, ModelSource, Provider};
+    use crate::storage::{Database, ModelRepository};
+    use std::sync::Arc;
+    use tracing::info;
+
     validation::validate_model_name(&args.model)?;
 
-    println!("Pulling model: {} from {:?}", args.model, args.source);
-    if args.resume {
-        println!("Resuming download...");
+    let (repo, version_tag) = parse_model_ref(&args.model);
+    let provider = resolve_provider(&args.source, &repo)?;
+    let model_name = derive_local_name(&repo);
+
+    let source = build_model_source(provider, &repo, version_tag);
+
+    let db_path = config.models_dir.join("fuse.redb");
+    let db = Arc::new(Database::new(db_path)?);
+    let repository = Arc::new(ModelRepository::new(db));
+    let manager = ModelManager::new(repository, config.models_dir.clone());
+
+    let auth = resolve_auth_from_env();
+
+    println!("Pulling {} from {}…", model_name, source);
+    if let Some(ref fmt) = args.format {
+        println!("Format requested: {}", fmt);
     }
-    println!("Note: Model pulling functionality will be implemented in task 5");
+    if args.resume {
+        println!("Resume mode enabled");
+    }
+    info!(model = %model_name, source = %source, format = ?args.format, resume = args.resume, "Starting pull");
+
+    let metadata = manager.pull(source, &model_name, auth, args.format, args.resume).await?;
+
     println!(
-        "Configuration: models_dir = {}",
-        config.models_dir.display()
+        "✓ {} pulled successfully ({}, {})",
+        metadata.name,
+        metadata.size_human_readable(),
+        metadata.version
     );
+
     Ok(())
+}
+
+/// Split "org/model:v1.2" into ("org/model", Some("v1.2")).
+fn parse_model_ref(model_ref: &str) -> (String, Option<String>) {
+    match model_ref.split_once(':') {
+        Some((repo, version)) => (repo.to_string(), Some(version.to_string())),
+        None => (model_ref.to_string(), None),
+    }
+}
+
+/// Derive a filesystem-safe local name from the repo path.
+/// "meta-llama/Llama-3.2-1B" → "Llama-3.2-1B"
+fn derive_local_name(repo: &str) -> String {
+    repo.split('/')
+        .last()
+        .unwrap_or(repo)
+        .to_string()
+}
+
+/// Resolve the provider from the --source flag or auto-detect from the model name.
+fn resolve_provider(source_flag: &Option<String>, repo: &str) -> Result<crate::model::Provider> {
+    use crate::model::Provider;
+    match source_flag {
+        Some(s) => s
+            .parse::<Provider>()
+            .map_err(crate::error::FuseError::ValidationError),
+        None => {
+            if repo.starts_with("unsloth/") {
+                Ok(Provider::Unsloth)
+            } else {
+                Ok(Provider::HuggingFace)
+            }
+        }
+    }
+}
+
+/// Construct a ModelSource from the resolved provider and optional version tag.
+fn build_model_source(
+    provider: crate::model::Provider,
+    repo: &str,
+    version: Option<String>,
+) -> crate::model::ModelSource {
+    use crate::model::{ModelSource, Provider};
+    let source = match provider {
+        Provider::HuggingFace => ModelSource::huggingface(repo),
+        Provider::Unsloth => ModelSource::unsloth(repo),
+        Provider::Remote => ModelSource::remote(repo),
+        Provider::Local => ModelSource::local(repo),
+    };
+    match version {
+        Some(v) => source.with_version(v),
+        None => source,
+    }
+}
+
+/// Read HuggingFace token from environment.
+fn resolve_auth_from_env() -> Option<crate::model::Auth> {
+    std::env::var("HF_TOKEN")
+        .or_else(|_| std::env::var("HUGGING_FACE_HUB_TOKEN"))
+        .ok()
+        .map(crate::model::Auth::ApiKey)
 }
 
 pub async fn handle_run(

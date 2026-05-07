@@ -50,6 +50,10 @@ pub enum Commands {
         #[clap(short, long)]
         source: Option<String>,
 
+        /// Specific model format to download (e.g., gguf, safetensors, onnx, pytorch)
+        #[clap(short = 'f', long)]
+        format: Option<String>,
+
         /// Resume a paused or failed download
         #[clap(short, long)]
         resume: bool,

@@ -14,6 +14,7 @@ pub struct InitArgs {
 pub struct PullArgs {
     pub model: String,
     pub source: Option<String>,
+    pub format: Option<String>,
     pub resume: bool,
 }
 

@@ -122,6 +122,7 @@ impl UnslothClient {
         url: &str,
         destination: &Path,
         auth: Option<&Auth>,
+        resume: bool,
         mut progress_callback: F,
     ) -> Result<()>
     where
@@ -134,7 +135,17 @@ impl UnslothClient {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        let mut start_byte = 0u64;
+        if resume && destination.exists() {
+            start_byte = tokio::fs::metadata(destination).await.map(|m| m.len()).unwrap_or(0);
+        }
+
         let mut request = self.client.get(url);
+
+        if start_byte > 0 {
+            request = request.header("Range", format!("bytes={}-", start_byte));
+            info!("Resuming download from byte {}", start_byte);
+        }
 
         // Add authentication if provided
         if let Some(auth) = auth {
@@ -148,7 +159,7 @@ impl UnslothClient {
             .await
             .map_err(|e| FuseError::NetworkError(format!("Failed to download file: {}", e)))?;
 
-        if !response.status().is_success() {
+        if !response.status().is_success() && response.status().as_u16() != 206 {
             return Err(FuseError::DownloadError(format!(
                 "Failed to download file: HTTP {}",
                 response.status()
@@ -156,11 +167,18 @@ impl UnslothClient {
         }
 
         // Get total size
-        let total_bytes = response.content_length();
+        let total_bytes = response.content_length().map(|len| start_byte + len);
 
         // Download with progress tracking
-        let mut file = tokio::fs::File::create(destination).await?;
-        let mut bytes_downloaded = 0u64;
+        let mut file = if start_byte > 0 {
+            tokio::fs::OpenOptions::new()
+                .append(true)
+                .open(destination)
+                .await?
+        } else {
+            tokio::fs::File::create(destination).await?
+        };
+        let mut bytes_downloaded = start_byte;
         let mut stream = response.bytes_stream();
         let start_time = std::time::Instant::now();
 
@@ -199,6 +217,8 @@ impl UnslothClient {
         model_id: &str,
         destination_dir: &Path,
         auth: Option<&Auth>,
+        format: Option<&str>,
+        resume: bool,
         mut progress_callback: F,
     ) -> Result<Vec<String>>
     where
@@ -210,10 +230,40 @@ impl UnslothClient {
         tokio::fs::create_dir_all(destination_dir).await?;
 
         // List all files for the model
-        let files = self.list_files(model_id, auth).await?;
+        let all_files = self.list_files(model_id, auth).await?;
+
+        // Filter files by format
+        let files: Vec<_> = all_files
+            .into_iter()
+            .filter(|f| {
+                let path_lower = f.name.to_lowercase();
+                
+                let is_metadata = path_lower.ends_with(".json") 
+                    || path_lower.ends_with(".txt")
+                    || path_lower.ends_with(".model");
+
+                if let Some(fmt) = format {
+                    let fmt_lower = fmt.to_lowercase();
+                    let matches_format = match fmt_lower.as_str() {
+                        "pytorch" | "pt" => path_lower.ends_with(".bin") || path_lower.ends_with(".pt") || path_lower.ends_with(".pth"),
+                        "tensorrt" | "trt" => path_lower.ends_with(".engine") || path_lower.ends_with(".trt") || path_lower.ends_with(".plan"),
+                        _ => path_lower.contains(&fmt_lower),
+                    };
+                    matches_format || is_metadata
+                } else {
+                    path_lower.ends_with(".bin")
+                        || path_lower.ends_with(".safetensors")
+                        || path_lower.ends_with(".gguf")
+                        || path_lower.ends_with(".onnx")
+                        || path_lower.ends_with(".pt")
+                        || path_lower.ends_with(".engine")
+                        || is_metadata
+                }
+            })
+            .collect();
 
         if files.is_empty() {
-            warn!("No model files found");
+            warn!("No model files found matching criteria");
             return Err(FuseError::DownloadError("No model files found".to_string()));
         }
 
@@ -227,7 +277,7 @@ impl UnslothClient {
 
             info!("Downloading file: {}", file_info.name);
 
-            self.download_file(&file_info.url, &file_destination, auth, |progress| {
+            self.download_file(&file_info.url, &file_destination, auth, resume, |progress| {
                 progress_callback(&file_info.name, progress)
             })
             .await?;
