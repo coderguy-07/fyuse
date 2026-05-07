@@ -26,6 +26,9 @@ pub struct ModelMetadata {
     pub parameter_count: Option<usize>,
     /// Quantization method if quantized
     pub quantization: Option<String>,
+    /// Format downloaded (e.g., gguf, pytorch)
+    #[serde(default)]
+    pub format: Option<String>,
     /// Model tags for categorization
     pub tags: Vec<String>,
     /// Custom metadata fields
@@ -58,6 +61,7 @@ impl ModelMetadata {
             architecture: None,
             parameter_count: None,
             quantization: None,
+            format: None,
             tags: Vec::new(),
             custom_metadata: HashMap::new(),
             file_paths: Vec::new(),
@@ -81,6 +85,12 @@ impl ModelMetadata {
     /// Set the quantization method
     pub fn with_quantization(mut self, quantization: impl Into<String>) -> Self {
         self.quantization = Some(quantization.into());
+        self
+    }
+
+    /// Set the format
+    pub fn with_format(mut self, format: impl Into<String>) -> Self {
+        self.format = Some(format.into());
         self
     }
 
@@ -203,6 +213,7 @@ mod tests {
         assert!(metadata.architecture.is_none());
         assert!(metadata.parameter_count.is_none());
         assert!(metadata.quantization.is_none());
+        assert!(metadata.format.is_none());
         assert!(metadata.tags.is_empty());
         assert!(metadata.custom_metadata.is_empty());
     }
@@ -385,6 +396,7 @@ mod tests {
         assert_eq!(deserialized.size_bytes, metadata.size_bytes);
         assert_eq!(deserialized.architecture, metadata.architecture);
         assert_eq!(deserialized.parameter_count, metadata.parameter_count);
+        assert_eq!(deserialized.format, metadata.format);
         assert_eq!(deserialized.tags, metadata.tags);
     }
 }

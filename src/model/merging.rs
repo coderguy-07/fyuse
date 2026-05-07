@@ -460,6 +460,7 @@ impl ModelMerger {
             architecture: models[0].architecture.clone(), // Assume same architecture
             parameter_count: Some(result.total_parameters as usize),
             quantization: None, // Merged models typically not quantized
+            format: None,
             tags: {
                 let mut tags = vec!["merged".to_string()];
                 tags.extend(models.iter().flat_map(|m| m.tags.clone()));
@@ -592,6 +593,7 @@ mod tests {
                 architecture: Some("transformer".to_string()),
                 parameter_count: Some(100_000_000),
                 quantization: None,
+                format: None,
                 tags: vec![],
                 custom_metadata: HashMap::new(),
                 file_paths: vec![],
@@ -609,6 +611,7 @@ mod tests {
                 architecture: Some("transformer".to_string()),
                 parameter_count: Some(200_000_000),
                 quantization: None,
+                format: None,
                 tags: vec![],
                 custom_metadata: HashMap::new(),
                 file_paths: vec![],

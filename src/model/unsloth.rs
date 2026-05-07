@@ -123,6 +123,7 @@ impl UnslothClient {
         destination: &Path,
         auth: Option<&Auth>,
         resume: bool,
+        expected_size: u64,
         mut progress_callback: F,
     ) -> Result<()>
     where
@@ -138,6 +139,10 @@ impl UnslothClient {
         let mut start_byte = 0u64;
         if resume && destination.exists() {
             start_byte = tokio::fs::metadata(destination).await.map(|m| m.len()).unwrap_or(0);
+            if expected_size > 0 && start_byte >= expected_size {
+                info!("File already fully downloaded: {}", destination.display());
+                return Ok(());
+            }
         }
 
         let mut request = self.client.get(url);
@@ -159,18 +164,26 @@ impl UnslothClient {
             .await
             .map_err(|e| FuseError::NetworkError(format!("Failed to download file: {}", e)))?;
 
-        if !response.status().is_success() && response.status().as_u16() != 206 {
+        let status = response.status();
+        if !status.is_success() && status.as_u16() != 206 {
             return Err(FuseError::DownloadError(format!(
                 "Failed to download file: HTTP {}",
-                response.status()
+                status
             )));
+        }
+
+        // Check if server ignored the Range header and returned the full file (200 OK)
+        let is_partial = status.as_u16() == 206;
+        if start_byte > 0 && !is_partial {
+            warn!("Server ignored Range request, downloading from scratch");
+            start_byte = 0;
         }
 
         // Get total size
         let total_bytes = response.content_length().map(|len| start_byte + len);
 
         // Download with progress tracking
-        let mut file = if start_byte > 0 {
+        let mut file = if start_byte > 0 && is_partial {
             tokio::fs::OpenOptions::new()
                 .append(true)
                 .open(destination)
@@ -267,6 +280,20 @@ impl UnslothClient {
             return Err(FuseError::DownloadError("No model files found".to_string()));
         }
 
+        // If a specific format was requested, ensure we found at least one non-metadata file matching it
+        if format.is_some() {
+            let has_format_file = files.iter().any(|f| {
+                let path_lower = f.name.to_lowercase();
+                !(path_lower.ends_with(".json") || path_lower.ends_with(".txt") || path_lower.ends_with(".model"))
+            });
+            if !has_format_file {
+                warn!("No model weights found matching format: {:?}", format);
+                return Err(FuseError::DownloadError(
+                    format!("No model weights found matching requested format: {}", format.unwrap_or(""))
+                ));
+            }
+        }
+
         info!("Found {} files to download", files.len());
 
         let mut downloaded_files = Vec::new();
@@ -277,7 +304,7 @@ impl UnslothClient {
 
             info!("Downloading file: {}", file_info.name);
 
-            self.download_file(&file_info.url, &file_destination, auth, resume, |progress| {
+            self.download_file(&file_info.url, &file_destination, auth, resume, file_info.size, |progress| {
                 progress_callback(&file_info.name, progress)
             })
             .await?;

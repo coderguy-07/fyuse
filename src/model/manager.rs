@@ -142,6 +142,11 @@ impl ModelManager {
             metadata = metadata.with_architecture(library);
         }
 
+        // Add format if specified
+        if let Some(fmt) = format {
+            metadata = metadata.with_format(fmt);
+        }
+
         // Add file paths
         for file_path in downloaded_files {
             metadata = metadata.with_file_path(file_path.clone());
@@ -234,6 +239,11 @@ impl ModelManager {
         // Add parameter count
         if let Some(parameters) = model_info.parameters {
             metadata = metadata.with_parameter_count(parameters);
+        }
+
+        // Add format if specified
+        if let Some(fmt) = format {
+            metadata = metadata.with_format(fmt);
         }
 
         // Add file paths
@@ -404,10 +414,11 @@ impl ModelManager {
         // Re-download the model using the same source
         let source = old_metadata.source.clone();
         let auth = None; // TODO: Store auth in metadata for updates
+        let format = old_metadata.format.clone();
 
         let mut new_metadata = match source.provider {
-            Provider::HuggingFace => self.pull_from_huggingface(source, name, auth, None, false).await?,
-            Provider::Unsloth => self.pull_from_unsloth(source, name, auth, None, false).await?,
+            Provider::HuggingFace => self.pull_from_huggingface(source, name, auth, format, false).await?,
+            Provider::Unsloth => self.pull_from_unsloth(source, name, auth, format, false).await?,
             Provider::Remote => {
                 return Err(FuseError::FeatureDisabled(
                     "Remote model updates will be implemented in task 6".to_string(),
