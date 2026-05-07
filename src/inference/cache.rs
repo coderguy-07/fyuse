@@ -106,28 +106,30 @@ impl InferenceCache {
             return None;
         }
 
-        match self.entries.get(key) {
-            Some(entry) if !entry.is_expired() => {
+        // Phase 1: Try to get a valid hit (Read Lock)
+        if let Some(entry) = self.entries.get(key) {
+            if !entry.is_expired() {
+                let val = entry.value.clone();
+                drop(entry); // Release read lock before taking LRU write lock
+                
                 self.hits.fetch_add(1, Ordering::Relaxed);
-                // Move to front of LRU
                 let mut lru = self.lru_order.write();
                 lru.retain(|k| k != key);
                 lru.push_front(key.to_string());
-                Some(entry.value.clone())
-            }
-            Some(_) => {
-                // Expired — remove
-                self.entries.remove(key);
-                self.misses.fetch_add(1, Ordering::Relaxed);
-                let mut lru = self.lru_order.write();
-                lru.retain(|k| k != key);
-                None
-            }
-            None => {
-                self.misses.fetch_add(1, Ordering::Relaxed);
-                None
+                return Some(val);
             }
         }
+
+        // Phase 2: Atomic cleanup if expired
+        // We use remove_if to ensure we only delete it if it is still expired (atomic check-and-delete)
+        if self.entries.remove_if(key, |_, v| v.is_expired()).is_some() {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+            let mut lru = self.lru_order.write();
+            lru.retain(|k| k != key);
+        } else {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+        }
+        None
     }
 
     /// Store a response in the cache.
@@ -192,25 +194,15 @@ impl InferenceCache {
         }
     }
 
-    /// Remove expired entries.
-    pub fn cleanup_expired(&self) {
-        let expired_keys: Vec<String> = self
-            .entries
-            .iter()
-            .filter(|e| e.value().is_expired())
-            .map(|e| e.key().clone())
-            .collect();
-
-        for key in expired_keys {
-            self.entries.remove(&key);
-            let mut lru = self.lru_order.write();
-            lru.retain(|k| k != &key);
-        }
-    }
 
     fn evict_lru(&self) {
-        let mut lru = self.lru_order.write();
-        if let Some(key) = lru.pop_back() {
+        // Decouple locks to prevent ABBA deadlock
+        let key_to_remove = {
+            let mut lru = self.lru_order.write();
+            lru.pop_back()
+        };
+
+        if let Some(key) = key_to_remove {
             self.entries.remove(&key);
             self.evictions.fetch_add(1, Ordering::Relaxed);
         }
@@ -349,19 +341,6 @@ mod tests {
         assert!((stats.hit_rate - 0.5).abs() < f64::EPSILON);
     }
 
-    #[test]
-    fn test_cleanup_expired() {
-        let cache = InferenceCache::new(CacheConfig {
-            enabled: true,
-            max_entries: 10,
-            ttl_seconds: 0,
-        });
-        cache.set("key1".to_string(), "value1".to_string());
-        cache.set("key2".to_string(), "value2".to_string());
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        cache.cleanup_expired();
-        assert_eq!(cache.entries.len(), 0);
-    }
 
     #[test]
     fn test_lru_order() {
