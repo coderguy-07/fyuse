@@ -58,6 +58,12 @@ fuse pull llama-3 --source huggingface
 # Pull with organization/model format
 fuse pull meta-llama/llama-3.1:latest
 
+# Pull only GGUF format files
+fuse pull TheBloke/Llama-2-7B-GGUF --format gguf
+
+# Pull only Safetensors format files
+fuse pull meta-llama/Llama-2-7b-hf --format safetensors
+
 # Resume interrupted download
 fuse pull gpt2 --resume
 ```

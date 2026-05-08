@@ -49,6 +49,8 @@ impl ModelManager {
         source: ModelSource,
         name: &str,
         auth: Option<Auth>,
+        format: Option<String>,
+        resume: bool,
     ) -> Result<ModelMetadata> {
         info!("Pulling model {} from {}", name, source);
 
@@ -56,14 +58,14 @@ impl ModelManager {
         if self.repository.exists(name)? {
             warn!("Model {} already exists. Use update to refresh it.", name);
             return Err(FuseError::ValidationError(format!(
-                "Model {} already exists. Use 'fuse update {}' to refresh it.",
+                "Model {} already exists. Use 'fuse update {}' to pull the latest version.",
                 name, name
             )));
         }
 
         match source.provider {
-            Provider::HuggingFace => self.pull_from_huggingface(source, name, auth).await,
-            Provider::Unsloth => self.pull_from_unsloth(source, name, auth).await,
+            Provider::HuggingFace => self.pull_from_huggingface(source, name, auth, format, resume).await,
+            Provider::Unsloth => self.pull_from_unsloth(source, name, auth, format, resume).await,
             Provider::Remote => Err(FuseError::FeatureDisabled(
                 "Remote model pulling will be implemented in task 6".to_string(),
             )),
@@ -79,6 +81,8 @@ impl ModelManager {
         source: ModelSource,
         name: &str,
         auth: Option<Auth>,
+        format: Option<String>,
+        resume: bool,
     ) -> Result<ModelMetadata> {
         info!("Pulling model from Hugging Face: {}", source.repository);
 
@@ -102,6 +106,8 @@ impl ModelManager {
                 source.version.as_deref(),
                 &model_dir,
                 auth.as_ref(),
+                format.as_deref(),
+                resume,
                 |file_path, progress| {
                     self.print_progress(file_path, &progress);
                 },
@@ -136,6 +142,11 @@ impl ModelManager {
             metadata = metadata.with_architecture(library);
         }
 
+        // Add format if specified
+        if let Some(fmt) = format {
+            metadata = metadata.with_format(fmt);
+        }
+
         // Add file paths
         for file_path in downloaded_files {
             metadata = metadata.with_file_path(file_path.clone());
@@ -162,6 +173,8 @@ impl ModelManager {
         source: ModelSource,
         name: &str,
         auth: Option<Auth>,
+        format: Option<String>,
+        resume: bool,
     ) -> Result<ModelMetadata> {
         info!("Pulling model from Unsloth: {}", source.repository);
 
@@ -184,6 +197,8 @@ impl ModelManager {
                 &source.repository,
                 &model_dir,
                 auth.as_ref(),
+                format.as_deref(),
+                resume,
                 |file_path, progress| {
                     self.print_progress(file_path, &progress);
                 },
@@ -224,6 +239,11 @@ impl ModelManager {
         // Add parameter count
         if let Some(parameters) = model_info.parameters {
             metadata = metadata.with_parameter_count(parameters);
+        }
+
+        // Add format if specified
+        if let Some(fmt) = format {
+            metadata = metadata.with_format(fmt);
         }
 
         // Add file paths
@@ -394,10 +414,11 @@ impl ModelManager {
         // Re-download the model using the same source
         let source = old_metadata.source.clone();
         let auth = None; // TODO: Store auth in metadata for updates
+        let format = old_metadata.format.clone();
 
         let mut new_metadata = match source.provider {
-            Provider::HuggingFace => self.pull_from_huggingface(source, name, auth).await?,
-            Provider::Unsloth => self.pull_from_unsloth(source, name, auth).await?,
+            Provider::HuggingFace => self.pull_from_huggingface(source, name, auth, format, false).await?,
+            Provider::Unsloth => self.pull_from_unsloth(source, name, auth, format, false).await?,
             Provider::Remote => {
                 return Err(FuseError::FeatureDisabled(
                     "Remote model updates will be implemented in task 6".to_string(),
@@ -559,7 +580,7 @@ mod tests {
 
         // Try to pull the same model again
         let source = ModelSource::huggingface("test/model");
-        let result = manager.pull(source, "test-model", None).await;
+        let result = manager.pull(source, "test-model", None, None, false).await;
 
         assert!(result.is_err());
         match result {
@@ -575,7 +596,7 @@ mod tests {
         let (manager, _db_temp, _models_temp) = create_test_manager();
 
         let source = ModelSource::local("/path/to/model");
-        let result = manager.pull(source, "test-model", None).await;
+        let result = manager.pull(source, "test-model", None, None, false).await;
 
         assert!(result.is_err());
         match result {
@@ -591,7 +612,7 @@ mod tests {
         let (manager, _db_temp, _models_temp) = create_test_manager();
 
         let source = ModelSource::remote("https://example.com/model");
-        let result = manager.pull(source, "test-model", None).await;
+        let result = manager.pull(source, "test-model", None, None, false).await;
 
         assert!(result.is_err());
         match result {

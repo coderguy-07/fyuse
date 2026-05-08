@@ -16,7 +16,7 @@ Fuse follows a strict **TDD (Test-Driven Development)** protocol: RED → GREEN 
 | | `inference::coordinator` | 5 | Pass |
 | | `inference::sampler` | ~6 | Pass |
 | | `inference::grammar` | ~5 | Pass |
-| | `inference::cache` | 15 | Pass (1 slow) |
+| | `inference::cache` | 14 | Pass |
 | | `inference::wasm_runtime` | 6 | Pass |
 | | `inference::ab_testing` | 17 | Pass |
 | | `inference::prompt_optimizer` | 15 | Pass |
@@ -88,7 +88,7 @@ Fuse follows a strict **TDD (Test-Driven Development)** protocol: RED → GREEN 
 | **Workflow** | `workflow::parser` | ~4 | Pass |
 | | `workflow::executor` | ~4 | Pass |
 | **Platform** | `platform::hardware` | ~4 | Pass |
-| **Pre-existing failures** | `pool`, `queue`, `system` | 4 | **FAIL** |
+| **Pre-existing failures** | `pool`, `queue` | 3 | **FAIL** |
 
 ---
 
@@ -97,7 +97,7 @@ Fuse follows a strict **TDD (Test-Driven Development)** protocol: RED → GREEN 
 ### Full Test Suite
 
 ```bash
-cd /Volumes/hex/ai-fuse/fuse
+cd <project-root>
 
 # All unit tests (skip known slow/hanging test)
 cargo test --lib -- --skip test_cache_ttl_expiration
@@ -254,8 +254,6 @@ mod tests {
 | `test_model_pool` | pool | Pre-existing race condition | Low — pool module not in critical path |
 | `test_connection_pool_basic` | pool | Pre-existing assertion failure | Low |
 | `test_priority_ordering` | queue | Pre-existing ordering issue | Low — queue module auxiliary |
-| `test_system_capability_detection` | system | Platform-specific detection | Low — informational only |
-| `test_cache_ttl_expiration` | inference::cache | Sleeps 120s+ waiting for TTL | Skip — functionality works |
 
 ---
 
@@ -266,7 +264,7 @@ mod tests {
 | New code coverage | >95% | ~95% (TDD enforced) |
 | Overall test count | >800 | 879+ |
 | Clippy warnings | 0 | 0 |
-| Pre-existing failures | <10 | 4 |
+| Pre-existing failures | <10 | 3 |
 
 ---
 

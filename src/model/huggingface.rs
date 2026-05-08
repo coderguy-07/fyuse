@@ -131,22 +131,16 @@ impl HuggingFaceClient {
     /// Download a file from Hugging Face
     pub async fn download_file<F>(
         &self,
-        repository: &str,
-        file_path: &str,
-        revision: Option<&str>,
+        url: &str,
         destination: &Path,
         auth: Option<&Auth>,
+        resume: bool,
+        expected_size: u64,
         mut progress_callback: F,
     ) -> Result<()>
     where
         F: FnMut(DownloadProgress) + Send,
     {
-        let revision = revision.unwrap_or("main");
-        let url = format!(
-            "{}/{}/resolve/{}/{}",
-            self.base_url, repository, revision, file_path
-        );
-
         info!("Downloading file from: {}", url);
 
         // Create parent directory if it doesn't exist
@@ -154,7 +148,21 @@ impl HuggingFaceClient {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let mut request = self.client.get(&url);
+        let mut start_byte = 0u64;
+        if resume && destination.exists() {
+            start_byte = tokio::fs::metadata(destination).await.map(|m| m.len()).unwrap_or(0);
+            if expected_size > 0 && start_byte >= expected_size {
+                info!("File already fully downloaded: {}", destination.display());
+                return Ok(());
+            }
+        }
+
+        let mut request = self.client.get(url);
+
+        if start_byte > 0 {
+            request = request.header("Range", format!("bytes={}-", start_byte));
+            info!("Resuming download from byte {}", start_byte);
+        }
 
         // Add authentication if provided
         if let Some(auth) = auth {
@@ -168,19 +176,34 @@ impl HuggingFaceClient {
             .await
             .map_err(|e| FuseError::NetworkError(format!("Failed to download file: {}", e)))?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() && status.as_u16() != 206 {
             return Err(FuseError::DownloadError(format!(
                 "Failed to download file: HTTP {}",
-                response.status()
+                status
             )));
         }
 
+        // Check if server ignored the Range header and returned the full file (200 OK)
+        let is_partial = status.as_u16() == 206;
+        if start_byte > 0 && !is_partial {
+            warn!("Server ignored Range request, downloading from scratch");
+            start_byte = 0;
+        }
+
         // Get total size
-        let total_bytes = response.content_length();
+        let total_bytes = response.content_length().map(|len| start_byte + len);
 
         // Download with progress tracking
-        let mut file = tokio::fs::File::create(destination).await?;
-        let mut bytes_downloaded = 0u64;
+        let mut file = if start_byte > 0 && is_partial {
+            tokio::fs::OpenOptions::new()
+                .append(true)
+                .open(destination)
+                .await?
+        } else {
+            tokio::fs::File::create(destination).await?
+        };
+        let mut bytes_downloaded = start_byte;
         let mut stream = response.bytes_stream();
         let start_time = std::time::Instant::now();
 
@@ -220,6 +243,8 @@ impl HuggingFaceClient {
         revision: Option<&str>,
         destination_dir: &Path,
         auth: Option<&Auth>,
+        format: Option<&str>,
+        resume: bool,
         mut progress_callback: F,
     ) -> Result<Vec<String>>
     where
@@ -233,17 +258,38 @@ impl HuggingFaceClient {
         // List all files in the repository
         let files = self.list_files(repository, revision, auth).await?;
 
-        // Filter for model files (exclude .gitattributes, README, etc.)
+        // Filter for model files based on format
         let model_files: Vec<_> = files
             .into_iter()
             .filter(|f| {
-                f.file_type == "file"
-                    && (f.path.ends_with(".bin")
-                        || f.path.ends_with(".safetensors")
-                        || f.path.ends_with(".gguf")
-                        || f.path.ends_with(".json")
-                        || f.path.ends_with(".txt")
-                        || f.path.ends_with(".model"))
+                if f.file_type != "file" { return false; }
+
+                let path_lower = f.path.to_lowercase();
+                
+                // Essential metadata files that are always needed (configs, tokenizers, vocabs)
+                let is_metadata = path_lower.ends_with(".json") 
+                    || path_lower.ends_with(".txt")
+                    || path_lower.ends_with(".model");
+
+                if let Some(fmt) = format {
+                    let fmt_lower = fmt.to_lowercase();
+                    // Map format names to extensions
+                    let matches_format = match fmt_lower.as_str() {
+                        "pytorch" | "pt" => path_lower.ends_with(".bin") || path_lower.ends_with(".pt") || path_lower.ends_with(".pth"),
+                        "tensorrt" | "trt" => path_lower.ends_with(".engine") || path_lower.ends_with(".trt") || path_lower.ends_with(".plan"),
+                        _ => path_lower.contains(&fmt_lower), // for gguf, safetensors, onnx
+                    };
+                    matches_format || is_metadata
+                } else {
+                    // Default behavior: download all recognized formats
+                    path_lower.ends_with(".bin")
+                        || path_lower.ends_with(".safetensors")
+                        || path_lower.ends_with(".gguf")
+                        || path_lower.ends_with(".onnx")
+                        || path_lower.ends_with(".pt")
+                        || path_lower.ends_with(".engine")
+                        || is_metadata
+                }
             })
             .collect();
 
@@ -254,24 +300,35 @@ impl HuggingFaceClient {
             ));
         }
 
+        // If a specific format was requested, ensure we found at least one non-metadata file matching it
+        if format.is_some() {
+            let has_format_file = model_files.iter().any(|f| {
+                let path_lower = f.path.to_lowercase();
+                !(path_lower.ends_with(".json") || path_lower.ends_with(".txt") || path_lower.ends_with(".model"))
+            });
+            if !has_format_file {
+                warn!("No model weights found matching format: {:?}", format);
+                return Err(FuseError::DownloadError(
+                    format!("No model weights found matching requested format: {}", format.unwrap_or(""))
+                ));
+            }
+        }
+
         info!("Found {} files to download", model_files.len());
 
         let mut downloaded_files = Vec::new();
+        let revision = revision.unwrap_or("main");
 
         // Download each file
         for file_info in model_files {
-            let file_destination = destination_dir.join(&file_info.path);
+            let dest_path = destination_dir.join(&file_info.path);
+            let url = format!("{}/{}/resolve/{}/{}", self.base_url, repository, revision, file_info.path);
 
             info!("Downloading file: {}", file_info.path);
 
-            self.download_file(
-                repository,
-                &file_info.path,
-                revision,
-                &file_destination,
-                auth,
-                |progress| progress_callback(&file_info.path, progress),
-            )
+            self.download_file(&url, &dest_path, auth, resume, file_info.size, |progress| {
+                progress_callback(&file_info.path, progress);
+            })
             .await?;
 
             downloaded_files.push(file_info.path);

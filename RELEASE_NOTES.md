@@ -52,7 +52,7 @@ Fuse is the unified, open-source AI system manager — a single Rust binary that
 - **Token sampling** — temperature, top-p, top-k, min-p, repetition penalty
 - **Streaming** — token-by-token streaming for all API endpoints
 - **Structured output** — JSON mode + regex grammar constraints
-- **Smart response caching** — LRU + TTL with SHA256 keys, semantic deduplication
+- **Smart response caching** — LRU + TTL with SHA256 keys, semantic deduplication, zero-scan lazy eviction
 - **Model A/B testing** — configurable traffic splits with quality metric tracking
 
 ### API Server
@@ -73,7 +73,7 @@ Fuse is the unified, open-source AI system manager — a single Rust binary that
 - Quality validation with perplexity/RMSE
 
 ### Model Management
-- **HuggingFace registry** — download with resume, checksum verification
+- **HuggingFace registry** — download with resume, checksum verification, `--format` flag for GGUF/Safetensors filtering
 - **Ollama registry** — pull compatible models
 - **Model lifecycle** — pull, list, inspect, remove, cache
 - **Model recommender** — hardware-aware model + quantization selection
@@ -159,7 +159,7 @@ Fuse is the unified, open-source AI system manager — a single Rust binary that
 | Metric | Value |
 |--------|-------|
 | Total tests | 879+ passing |
-| Test failures | 4 pre-existing (pool, queue, system modules) |
+| Test failures | 3 pre-existing (pool, queue modules) |
 | Clippy warnings | 0 |
 | Formatting | cargo fmt clean |
 | Phases complete | 10/10 (100%) |
@@ -169,20 +169,18 @@ Fuse is the unified, open-source AI system manager — a single Rust binary that
 
 ## Known Issues
 
-1. **`test_cache_ttl_expiration`** — Hangs due to long sleep in TTL test. Skip with `--skip test_cache_ttl_expiration`.
-2. **`pool::tests::test_model_pool`** — Pre-existing failure in connection pool module.
-3. **`pool::tests::test_connection_pool_basic`** — Pre-existing failure in connection pool module.
-4. **`queue::tests::test_priority_ordering`** — Pre-existing failure in queue module.
-5. **`system::tests::test_system_capability_detection`** — Pre-existing failure in system detection.
-6. **Inference engine placeholders** — Metal/CUDA/WASM backends have trait implementations but use placeholder inference (require actual model files).
-7. **Channel send_message** — Telegram/Discord/Slack/Matrix channels validate config but don't open real connections (mock-ready).
+1. **`pool::tests::test_model_pool`** — Pre-existing failure in connection pool module.
+2. **`pool::tests::test_connection_pool_basic`** — Pre-existing failure in connection pool module.
+3. **`queue::tests::test_priority_ordering`** — Pre-existing failure in queue module.
+4. **Inference engine placeholders** — Metal/CUDA/WASM backends have trait implementations but use placeholder inference (require actual model files).
+5. **Channel send_message** — Telegram/Discord/Slack/Matrix channels validate config but don't open real connections (mock-ready).
 
 ---
 
 ## Build Instructions
 
 ```bash
-cd /Volumes/hex/ai-fuse/fuse
+cd <project-root>
 
 # Default build (CLI + API server + CPU inference)
 cargo build --release

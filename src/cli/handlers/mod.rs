@@ -28,11 +28,13 @@ pub async fn handle_command(
         Commands::Pull {
             model,
             source,
+            format,
             resume,
         } => {
             let args = PullArgs {
                 model,
                 source,
+                format,
                 resume,
             };
             model::handle_pull(args, &config, &feature_manager).await?;

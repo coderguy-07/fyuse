@@ -80,11 +80,11 @@ src/
 
 #### 7. CLI Interface
 Implemented comprehensive CLI with commands:
-- `pull`: Pull models (placeholder for task 5)
-- `run`: Run models (placeholder for task 7)
-- `rm`: Remove models (placeholder for task 5)
-- `update`: Update models (placeholder for task 5)
-- `list`: List models (placeholder for task 5)
+- `pull`: Pull models with --format and --resume support
+- `run`: Run model inference server
+- `rm`: Remove models
+- `update`: Update models
+- `list`: List models
 - `features list`: Show all feature flags and their status
 - `features enable <feature>`: Enable a feature flag
 - `features disable <feature>`: Disable a feature flag
