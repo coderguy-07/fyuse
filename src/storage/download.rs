@@ -91,7 +91,8 @@ impl DownloadManager {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .tcp_keepalive(std::time::Duration::from_secs(60))
                 .build()
                 .unwrap(),
             state: Arc::new(RwLock::new(DownloadState::Pending)),

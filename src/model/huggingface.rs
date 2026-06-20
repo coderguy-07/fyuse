@@ -41,7 +41,8 @@ impl HuggingFaceClient {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .tcp_keepalive(std::time::Duration::from_secs(60))
                 .build()
                 .unwrap(),
             base_url: "https://huggingface.co".to_string(),
@@ -56,7 +57,7 @@ impl HuggingFaceClient {
     ) -> Result<HuggingFaceModelInfo> {
         let url = format!("{}/api/models/{}", self.base_url, repository);
 
-        let mut request = self.client.get(&url);
+        let mut request = self.client.get(&url).timeout(std::time::Duration::from_secs(30));
 
         // Add authentication if provided
         if let Some(auth) = auth {
@@ -97,7 +98,7 @@ impl HuggingFaceClient {
             self.base_url, repository, revision
         );
 
-        let mut request = self.client.get(&url);
+        let mut request = self.client.get(&url).timeout(std::time::Duration::from_secs(30));
 
         // Add authentication if provided
         if let Some(auth) = auth {

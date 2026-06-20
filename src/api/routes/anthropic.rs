@@ -7,6 +7,7 @@
 
 use axum::{
     extract::State,
+    http::StatusCode,
     response::{
         sse::{Event, Sse},
         IntoResponse, Response,
@@ -164,6 +165,46 @@ pub enum StreamEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+impl MessagesRequest {
+    fn validate(&self) -> Result<(), String> {
+        if self.messages.is_empty() {
+            return Err("messages must not be empty".to_string());
+        }
+        if self.max_tokens == 0 {
+            return Err("max_tokens must be greater than 0".to_string());
+        }
+        if let Some(t) = self.temperature {
+            if !(0.0..=1.0).contains(&t) {
+                return Err("temperature must be between 0.0 and 1.0".to_string());
+            }
+        }
+        if let Some(tp) = self.top_p {
+            if !(0.0..=1.0).contains(&tp) {
+                return Err("top_p must be between 0.0 and 1.0".to_string());
+            }
+        }
+        Ok(())
+    }
+}
+
+fn invalid_request_error(msg: &str) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(serde_json::json!({
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "message": msg
+            }
+        })),
+    )
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -202,6 +243,10 @@ pub async fn messages(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<MessagesRequest>,
 ) -> Response {
+    if let Err(msg) = req.validate() {
+        return invalid_request_error(&msg);
+    }
+
     tracing::info!(model = %req.model, messages = req.messages.len(), "anthropic messages request");
 
     let stream = req.stream.unwrap_or(false);
@@ -452,5 +497,49 @@ mod tests {
         assert_eq!(body["model"], "claude-3-sonnet");
         assert!(body["content"].is_array());
         assert!(!body["content"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_messages_empty_messages_rejected() {
+        let server = ApiServer::new(test_state());
+        let (addr, _handle) = server.serve_test().await.unwrap();
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{}/v1/messages", addr))
+            .json(&serde_json::json!({
+                "model": "claude-3-sonnet",
+                "messages": [],
+                "max_tokens": 100
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["type"], "error");
+    }
+
+    #[tokio::test]
+    async fn test_messages_zero_max_tokens_rejected() {
+        let server = ApiServer::new(test_state());
+        let (addr, _handle) = server.serve_test().await.unwrap();
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{}/v1/messages", addr))
+            .json(&serde_json::json!({
+                "model": "claude-3-sonnet",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 0
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert!(body["error"]["message"].as_str().unwrap().contains("max_tokens"));
     }
 }

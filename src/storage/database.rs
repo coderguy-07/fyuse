@@ -140,6 +140,65 @@ impl Database {
         Ok(())
     }
 
+    /// List all values in a table (single read transaction — O(1) transactions).
+    pub fn list_all<T: for<'de> Deserialize<'de>>(&self, table: &str) -> Result<Vec<T>> {
+        let read_txn = self.db.begin_read().map_err(|e| {
+            FuseError::DatabaseError(format!("Failed to begin read transaction: {}", e))
+        })?;
+
+        let table_def = Self::get_table_definition(table)?;
+        let table_handle = read_txn
+            .open_table(table_def)
+            .map_err(|e| FuseError::DatabaseError(format!("Failed to open table: {}", e)))?;
+
+        let mut values = Vec::new();
+        let iter = table_handle
+            .iter()
+            .map_err(|e| FuseError::DatabaseError(format!("Failed to iterate table: {}", e)))?;
+
+        for item in iter {
+            let (_, value) =
+                item.map_err(|e| FuseError::DatabaseError(format!("Failed to read item: {}", e)))?;
+            let deserialized = serde_json::from_slice(value.value()).map_err(|e| {
+                FuseError::SerializationError(format!("Failed to deserialize value: {}", e))
+            })?;
+            values.push(deserialized);
+        }
+
+        Ok(values)
+    }
+
+    /// List all key-value pairs in a table (single read transaction — O(1) transactions).
+    pub fn list_entries<T: for<'de> Deserialize<'de>>(
+        &self,
+        table: &str,
+    ) -> Result<Vec<(String, T)>> {
+        let read_txn = self.db.begin_read().map_err(|e| {
+            FuseError::DatabaseError(format!("Failed to begin read transaction: {}", e))
+        })?;
+
+        let table_def = Self::get_table_definition(table)?;
+        let table_handle = read_txn
+            .open_table(table_def)
+            .map_err(|e| FuseError::DatabaseError(format!("Failed to open table: {}", e)))?;
+
+        let mut entries = Vec::new();
+        let iter = table_handle
+            .iter()
+            .map_err(|e| FuseError::DatabaseError(format!("Failed to iterate table: {}", e)))?;
+
+        for item in iter {
+            let (key, value) =
+                item.map_err(|e| FuseError::DatabaseError(format!("Failed to read item: {}", e)))?;
+            let deserialized = serde_json::from_slice(value.value()).map_err(|e| {
+                FuseError::SerializationError(format!("Failed to deserialize value: {}", e))
+            })?;
+            entries.push((key.value().to_string(), deserialized));
+        }
+
+        Ok(entries)
+    }
+
     /// List all keys in a table
     pub fn list_keys(&self, table: &str) -> Result<Vec<String>> {
         let read_txn = self.db.begin_read().map_err(|e| {

@@ -175,6 +175,42 @@ pub struct EmbeddingsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+impl GenerateRequest {
+    fn validate(&self) -> Result<(), String> {
+        if self.model.is_empty() {
+            return Err("model must not be empty".to_string());
+        }
+        if self.prompt.is_empty() {
+            return Err("prompt must not be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
+impl ChatRequest {
+    fn validate(&self) -> Result<(), String> {
+        if self.model.is_empty() {
+            return Err("model must not be empty".to_string());
+        }
+        if self.messages.is_empty() {
+            return Err("messages must not be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
+fn bad_request(msg: &str) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(serde_json::json!({"error": msg})),
+    )
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -193,7 +229,11 @@ fn now_rfc3339() -> String {
 pub async fn generate(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<GenerateRequest>,
-) -> Json<GenerateResponse> {
+) -> Response {
+    if let Err(msg) = req.validate() {
+        return bad_request(&msg);
+    }
+
     tracing::info!(model = %req.model, "generate request");
 
     Json(GenerateResponse {
@@ -208,13 +248,18 @@ pub async fn generate(
         eval_count: Some(0),
         eval_duration: Some(0),
     })
+    .into_response()
 }
 
 /// `POST /api/chat`
 pub async fn chat(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<ChatRequest>,
-) -> Json<ChatResponse> {
+) -> Response {
+    if let Err(msg) = req.validate() {
+        return bad_request(&msg);
+    }
+
     tracing::info!(model = %req.model, messages = req.messages.len(), "chat request");
 
     Json(ChatResponse {
@@ -230,6 +275,7 @@ pub async fn chat(
         eval_count: Some(0),
         eval_duration: Some(0),
     })
+    .into_response()
 }
 
 /// `GET /api/tags`
@@ -487,5 +533,41 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let body: serde_json::Value = resp.json().await.unwrap();
         assert!(body["embedding"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_generate_empty_prompt_rejected() {
+        let server = ApiServer::new(test_state());
+        let (addr, _handle) = server.serve_test().await.unwrap();
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{}/api/generate", addr))
+            .json(&serde_json::json!({"model": "llama2", "prompt": ""}))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert!(body["error"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_chat_empty_messages_rejected() {
+        let server = ApiServer::new(test_state());
+        let (addr, _handle) = server.serve_test().await.unwrap();
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{}/api/chat", addr))
+            .json(&serde_json::json!({"model": "llama2", "messages": []}))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert!(body["error"].as_str().is_some());
     }
 }

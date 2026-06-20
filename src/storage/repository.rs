@@ -29,16 +29,7 @@ impl ModelRepository {
     }
 
     pub fn list(&self) -> Result<Vec<ModelMetadata>> {
-        let keys = self.db.list_keys("models")?;
-        let mut models = Vec::new();
-
-        for key in keys {
-            if let Some(metadata) = self.get(&key)? {
-                models.push(metadata);
-            }
-        }
-
-        Ok(models)
+        self.db.list_all("models")
     }
 
     pub fn exists(&self, id: &str) -> Result<bool> {
@@ -102,18 +93,8 @@ impl HistoryRepository {
     }
 
     pub fn list(&self) -> Result<Vec<ChatMessage>> {
-        let keys = self.db.list_keys("history")?;
-        let mut messages = Vec::new();
-
-        for key in keys {
-            if let Some(message) = self.get(&key)? {
-                messages.push(message);
-            }
-        }
-
-        // Sort by timestamp
+        let mut messages: Vec<ChatMessage> = self.db.list_all("history")?;
         messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
-
         Ok(messages)
     }
 
@@ -149,16 +130,7 @@ impl DownloadStateRepository {
     }
 
     pub fn list(&self) -> Result<Vec<(String, DownloadState)>> {
-        let keys = self.db.list_keys("download_state")?;
-        let mut states = Vec::new();
-
-        for key in keys {
-            if let Some(state) = self.get(&key)? {
-                states.push((key, state));
-            }
-        }
-
-        Ok(states)
+        self.db.list_entries("download_state")
     }
 }
 

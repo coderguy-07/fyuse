@@ -9,7 +9,7 @@ use crate::inference::cpu::kv_cache::KvCache;
 use async_trait::async_trait;
 use candle_core::{Device, Tensor};
 use futures::stream::BoxStream;
-use parking_lot::RwLock;
+use parking_lot::{Mutex as PLMutex, RwLock};
 use rand::Rng as _;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -30,7 +30,7 @@ struct LoadedModel {
 
 /// CPU inference backend using candle.
 pub struct CpuInferenceBackend {
-    models: Arc<RwLock<HashMap<String, LoadedModel>>>,
+    models: Arc<RwLock<HashMap<String, Arc<PLMutex<LoadedModel>>>>>,
     device: Device,
 }
 
@@ -136,7 +136,9 @@ impl InferenceBackend for CpuInferenceBackend {
             device: self.device.clone(),
         };
 
-        self.models.write().insert(handle_id.clone(), loaded);
+        self.models
+            .write()
+            .insert(handle_id.clone(), Arc::new(PLMutex::new(loaded)));
 
         Ok(ModelHandle {
             id: handle_id,
@@ -164,12 +166,17 @@ impl InferenceBackend for CpuInferenceBackend {
         let max_tokens = req.max_tokens;
         let temperature = req.temperature;
 
-        let tokens = tokio::task::spawn_blocking(move || -> Result<Vec<u32>> {
-            let mut models = models.write();
-            let model = models
-                .get_mut(&handle_id)
-                .ok_or_else(|| FuseError::ModelNotFound(handle_id.clone()))?;
+        // Acquire map read lock briefly to get the per-model handle, then release.
+        let model_arc = {
+            let models_read = models.read();
+            models_read
+                .get(&handle_id)
+                .cloned()
+                .ok_or_else(|| FuseError::ModelNotFound(handle_id.clone()))?
+        };
 
+        let tokens = tokio::task::spawn_blocking(move || -> Result<Vec<u32>> {
+            let mut model = model_arc.lock();
             let backend = CpuInferenceBackend::new();
             let mut tokens = Vec::new();
             let vocab_size = model.vocab_size;
@@ -220,18 +227,29 @@ impl InferenceBackend for CpuInferenceBackend {
         let temperature = req.temperature;
 
         Box::pin(async_stream::stream! {
+            // Acquire map read lock briefly to get the per-model handle, then release.
+            // The guard must be dropped before any yield/await, so separate the lookup
+            // from the match that contains the yield.
+            let model_arc_opt = {
+                let models_read = models.read();
+                models_read.get(&handle_id).cloned()
+                // models_read dropped here
+            };
+
+            let model_arc = match model_arc_opt {
+                Some(m) => m,
+                None => {
+                    yield Err(FuseError::ModelNotFound(handle_id.clone()));
+                    return;
+                }
+            };
+
             for _i in 0..max_tokens {
-                let models_ref = Arc::clone(&models);
-                let hid = handle_id.clone();
+                let model_ref = Arc::clone(&model_arc);
 
                 let result = tokio::task::spawn_blocking(move || -> Result<u32> {
-                    let mut models = models_ref.write();
-                    let model = models
-                        .get_mut(&hid)
-                        .ok_or_else(|| FuseError::ModelNotFound(hid.clone()))?;
-
+                    let mut model = model_ref.lock();
                     let backend = CpuInferenceBackend::new();
-                    // Split borrow: extract kv_cache separately from model
                     let vocab_size = model.vocab_size;
                     let device = model.device.clone();
                     let logits = backend.forward_with_vocab(vocab_size, &device, &mut model.kv_cache)?;
