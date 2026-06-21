@@ -240,27 +240,59 @@ impl UnslothClient {
     {
         info!("Downloading model {} to {:?}", model_id, destination_dir);
 
-        // Create destination directory
         tokio::fs::create_dir_all(destination_dir).await?;
 
-        // List all files for the model
         let all_files = self.list_files(model_id, auth).await?;
 
-        // Filter files by format
+        // Smart GGUF selection when no explicit format is requested
+        let smart_winner: Option<String> = if format.is_none() {
+            let hw = crate::platform::hardware::HardwareProfiler::new().detect();
+            let vram = hw.gpu.as_ref().and_then(|g| g.vram_bytes);
+            let ram_budget = hw.available_ram_bytes.saturating_sub(2 * 1024 * 1024 * 1024);
+            let candidates: Vec<_> = all_files
+                .iter()
+                .map(|f| crate::model::format_selector::FileCandidate {
+                    name: f.name.clone(),
+                    size: f.size,
+                })
+                .collect();
+            let selected =
+                crate::model::format_selector::select_best_gguf(&candidates, ram_budget, vram);
+            if let Some(ref winner) = selected {
+                info!(
+                    "Smart GGUF selection: {} (RAM budget {}MB)",
+                    winner,
+                    ram_budget / 1_048_576
+                );
+            }
+            selected
+        } else {
+            None
+        };
+
         let files: Vec<_> = all_files
             .into_iter()
             .filter(|f| {
                 let path_lower = f.name.to_lowercase();
-                
-                let is_metadata = path_lower.ends_with(".json") 
+                let is_metadata = path_lower.ends_with(".json")
                     || path_lower.ends_with(".txt")
                     || path_lower.ends_with(".model");
 
-                if let Some(fmt) = format {
+                if let Some(ref winner) = smart_winner {
+                    f.name == *winner || is_metadata
+                } else if let Some(fmt) = format {
                     let fmt_lower = fmt.to_lowercase();
                     let matches_format = match fmt_lower.as_str() {
-                        "pytorch" | "pt" => path_lower.ends_with(".bin") || path_lower.ends_with(".pt") || path_lower.ends_with(".pth"),
-                        "tensorrt" | "trt" => path_lower.ends_with(".engine") || path_lower.ends_with(".trt") || path_lower.ends_with(".plan"),
+                        "pytorch" | "pt" => {
+                            path_lower.ends_with(".bin")
+                                || path_lower.ends_with(".pt")
+                                || path_lower.ends_with(".pth")
+                        }
+                        "tensorrt" | "trt" => {
+                            path_lower.ends_with(".engine")
+                                || path_lower.ends_with(".trt")
+                                || path_lower.ends_with(".plan")
+                        }
                         _ => path_lower.contains(&fmt_lower),
                     };
                     matches_format || is_metadata
@@ -281,35 +313,51 @@ impl UnslothClient {
             return Err(FuseError::DownloadError("No model files found".to_string()));
         }
 
-        // If a specific format was requested, ensure we found at least one non-metadata file matching it
         if format.is_some() {
             let has_format_file = files.iter().any(|f| {
-                let path_lower = f.name.to_lowercase();
-                !(path_lower.ends_with(".json") || path_lower.ends_with(".txt") || path_lower.ends_with(".model"))
+                let p = f.name.to_lowercase();
+                !(p.ends_with(".json") || p.ends_with(".txt") || p.ends_with(".model"))
             });
             if !has_format_file {
                 warn!("No model weights found matching format: {:?}", format);
-                return Err(FuseError::DownloadError(
-                    format!("No model weights found matching requested format: {}", format.unwrap_or(""))
-                ));
+                return Err(FuseError::DownloadError(format!(
+                    "No model weights found matching requested format: {}",
+                    format.unwrap_or("")
+                )));
             }
         }
 
-        info!("Found {} files to download", files.len());
+        // Disk space check before downloading
+        let total_required: u64 = files.iter().map(|f| f.size).sum();
+        let available_disk =
+            crate::platform::hardware::HardwareProfiler::available_disk_bytes(destination_dir);
+        if total_required > available_disk {
+            return Err(crate::error::FuseError::InsufficientDiskSpace {
+                required_gb: total_required as f64 / 1e9,
+                available_gb: available_disk as f64 / 1e9,
+            });
+        }
+
+        info!(
+            "Found {} files to download ({:.2}GB total)",
+            files.len(),
+            total_required as f64 / 1e9
+        );
 
         let mut downloaded_files = Vec::new();
 
-        // Download each file
         for file_info in files {
             let file_destination = destination_dir.join(&file_info.name);
-
             info!("Downloading file: {}", file_info.name);
-
-            self.download_file(&file_info.url, &file_destination, auth, resume, file_info.size, |progress| {
-                progress_callback(&file_info.name, progress)
-            })
+            self.download_file(
+                &file_info.url,
+                &file_destination,
+                auth,
+                resume,
+                file_info.size,
+                |progress| progress_callback(&file_info.name, progress),
+            )
             .await?;
-
             downloaded_files.push(file_info.name);
         }
 

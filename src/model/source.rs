@@ -7,6 +7,10 @@ pub enum Provider {
     HuggingFace,
     /// Unsloth model provider
     Unsloth,
+    /// Ollama model registry (registry.ollama.ai)
+    Ollama,
+    /// ModelScope (Alibaba) model hub
+    ModelScope,
     /// Remote endpoint (custom URL)
     Remote,
     /// Local file system
@@ -19,6 +23,8 @@ impl Provider {
         match self {
             Provider::HuggingFace => Some("https://huggingface.co"),
             Provider::Unsloth => Some("https://unsloth.ai"),
+            Provider::Ollama => Some("https://registry.ollama.ai"),
+            Provider::ModelScope => Some("https://www.modelscope.cn"),
             Provider::Remote | Provider::Local => None,
         }
     }
@@ -27,7 +33,7 @@ impl Provider {
     pub fn requires_auth(&self) -> bool {
         matches!(
             self,
-            Provider::HuggingFace | Provider::Unsloth | Provider::Remote
+            Provider::HuggingFace | Provider::Unsloth | Provider::ModelScope | Provider::Remote
         )
     }
 }
@@ -37,6 +43,8 @@ impl std::fmt::Display for Provider {
         match self {
             Provider::HuggingFace => write!(f, "huggingface"),
             Provider::Unsloth => write!(f, "unsloth"),
+            Provider::Ollama => write!(f, "ollama"),
+            Provider::ModelScope => write!(f, "modelscope"),
             Provider::Remote => write!(f, "remote"),
             Provider::Local => write!(f, "local"),
         }
@@ -50,6 +58,8 @@ impl std::str::FromStr for Provider {
         match s.to_lowercase().as_str() {
             "huggingface" | "hf" => Ok(Provider::HuggingFace),
             "unsloth" => Ok(Provider::Unsloth),
+            "ollama" => Ok(Provider::Ollama),
+            "modelscope" | "ms" => Ok(Provider::ModelScope),
             "remote" => Ok(Provider::Remote),
             "local" => Ok(Provider::Local),
             _ => Err(format!("Unknown provider: {}", s)),
@@ -126,6 +136,16 @@ impl ModelSource {
         Self::new(Provider::Unsloth, repository)
     }
 
+    /// Create an Ollama model source (format: "name:tag" e.g. "llama3.2:7b")
+    pub fn ollama(model_ref: impl Into<String>) -> Self {
+        Self::new(Provider::Ollama, model_ref)
+    }
+
+    /// Create a ModelScope model source
+    pub fn modelscope(repository: impl Into<String>) -> Self {
+        Self::new(Provider::ModelScope, repository)
+    }
+
     /// Create a remote model source
     pub fn remote(url: impl Into<String>) -> Self {
         Self {
@@ -175,6 +195,21 @@ impl ModelSource {
                 self.provider.base_url()?,
                 self.repository
             )),
+            Provider::Ollama => Some(format!(
+                "{}/v2/library/{}/manifests/{}",
+                self.provider.base_url()?,
+                self.repository,
+                self.version.as_deref().unwrap_or("latest")
+            )),
+            Provider::ModelScope => {
+                let version = self.version.as_deref().unwrap_or("master");
+                Some(format!(
+                    "{}/models/{}/resolve/{}",
+                    self.provider.base_url()?,
+                    self.repository,
+                    version
+                ))
+            }
             Provider::Remote => self.url.clone(),
             Provider::Local => None,
         }
@@ -183,7 +218,10 @@ impl ModelSource {
     /// Get a unique identifier for this source
     pub fn identifier(&self) -> String {
         match &self.provider {
-            Provider::HuggingFace | Provider::Unsloth => {
+            Provider::HuggingFace
+            | Provider::Unsloth
+            | Provider::Ollama
+            | Provider::ModelScope => {
                 if let Some(version) = &self.version {
                     format!("{}:{}", self.repository, version)
                 } else {
@@ -199,7 +237,10 @@ impl ModelSource {
 impl std::fmt::Display for ModelSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.provider {
-            Provider::HuggingFace | Provider::Unsloth => {
+            Provider::HuggingFace
+            | Provider::Unsloth
+            | Provider::Ollama
+            | Provider::ModelScope => {
                 write!(f, "{}/{}", self.provider, self.repository)?;
                 if let Some(version) = &self.version {
                     write!(f, ":{}", version)?;

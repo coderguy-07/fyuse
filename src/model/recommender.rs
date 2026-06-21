@@ -179,6 +179,30 @@ impl ModelRecommender {
             gpu_str
         )
     }
+
+    /// Recommend the best GGUF file from actual file candidates.
+    /// Works for any repo without needing to know model name or param count.
+    /// Uses file sizes to fit within hardware budget.
+    pub fn recommend_from_files(
+        &self,
+        candidates: &[crate::model::format_selector::FileCandidate],
+        hardware: &HardwareProfile,
+    ) -> Option<crate::model::format_selector::FileCandidate> {
+        let ram_bytes = hardware.ram_gb * 1024 * 1024 * 1024;
+        let vram_bytes = hardware.gpu_vram_gb.map(|g| g * 1024 * 1024 * 1024);
+        let ram_budget = ram_bytes.saturating_sub(2 * 1024 * 1024 * 1024);
+
+        let winner_name =
+            crate::model::format_selector::select_best_gguf(candidates, ram_budget, vram_bytes)?;
+
+        candidates
+            .iter()
+            .find(|f| f.name == winner_name)
+            .map(|f| crate::model::format_selector::FileCandidate {
+                name: f.name.clone(),
+                size: f.size,
+            })
+    }
 }
 
 impl Default for ModelRecommender {
