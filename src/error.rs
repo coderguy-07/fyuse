@@ -85,6 +85,9 @@ pub enum FuseError {
 
     #[error("Agent error: {0}")]
     AgentError(String),
+
+    #[error("Insufficient disk space: need {required_gb:.1}GB, have {available_gb:.1}GB")]
+    InsufficientDiskSpace { required_gb: f64, available_gb: f64 },
 }
 
 impl FuseError {
@@ -118,6 +121,7 @@ impl FuseError {
             FuseError::ChannelError { .. } => "CHANNEL_ERROR",
             FuseError::SessionNotFound(_) => "SESSION_NOT_FOUND",
             FuseError::AgentError(_) => "AGENT_ERROR",
+            FuseError::InsufficientDiskSpace { .. } => "INSUFFICIENT_DISK_SPACE",
         }
     }
 
@@ -192,6 +196,7 @@ impl FuseError {
             FuseError::ResourceUnavailable(_) => 503,
             FuseError::ResourceLimitExceeded(_) => 429,
             FuseError::FeatureDisabled(_) => 501,
+            FuseError::InsufficientDiskSpace { .. } => 507,
             _ => 500,
         }
     }

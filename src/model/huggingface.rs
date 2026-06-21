@@ -253,36 +253,69 @@ impl HuggingFaceClient {
     {
         info!("Downloading model {} to {:?}", repository, destination_dir);
 
-        // Create destination directory
         tokio::fs::create_dir_all(destination_dir).await?;
 
-        // List all files in the repository
         let files = self.list_files(repository, revision, auth).await?;
 
-        // Filter for model files based on format
+        // Smart GGUF selection when no explicit format is requested
+        let smart_winner: Option<String> = if format.is_none() {
+            let hw = crate::platform::hardware::HardwareProfiler::new().detect();
+            let vram = hw.gpu.as_ref().and_then(|g| g.vram_bytes);
+            let ram_budget = hw.available_ram_bytes.saturating_sub(2 * 1024 * 1024 * 1024);
+            let candidates: Vec<_> = files
+                .iter()
+                .filter(|f| f.file_type == "file")
+                .map(|f| crate::model::format_selector::FileCandidate {
+                    name: f.path.clone(),
+                    size: f.size,
+                })
+                .collect();
+            let selected =
+                crate::model::format_selector::select_best_gguf(&candidates, ram_budget, vram);
+            if let Some(ref winner) = selected {
+                info!(
+                    "Smart GGUF selection: {} (RAM budget {}MB)",
+                    winner,
+                    ram_budget / 1_048_576
+                );
+            }
+            selected
+        } else {
+            None
+        };
+
         let model_files: Vec<_> = files
             .into_iter()
             .filter(|f| {
-                if f.file_type != "file" { return false; }
-
+                if f.file_type != "file" {
+                    return false;
+                }
                 let path_lower = f.path.to_lowercase();
-                
-                // Essential metadata files that are always needed (configs, tokenizers, vocabs)
-                let is_metadata = path_lower.ends_with(".json") 
+                let is_metadata = path_lower.ends_with(".json")
                     || path_lower.ends_with(".txt")
                     || path_lower.ends_with(".model");
 
-                if let Some(fmt) = format {
+                if let Some(ref winner) = smart_winner {
+                    // Smart mode: only the selected GGUF + metadata
+                    f.path == *winner || is_metadata
+                } else if let Some(fmt) = format {
                     let fmt_lower = fmt.to_lowercase();
-                    // Map format names to extensions
                     let matches_format = match fmt_lower.as_str() {
-                        "pytorch" | "pt" => path_lower.ends_with(".bin") || path_lower.ends_with(".pt") || path_lower.ends_with(".pth"),
-                        "tensorrt" | "trt" => path_lower.ends_with(".engine") || path_lower.ends_with(".trt") || path_lower.ends_with(".plan"),
-                        _ => path_lower.contains(&fmt_lower), // for gguf, safetensors, onnx
+                        "pytorch" | "pt" => {
+                            path_lower.ends_with(".bin")
+                                || path_lower.ends_with(".pt")
+                                || path_lower.ends_with(".pth")
+                        }
+                        "tensorrt" | "trt" => {
+                            path_lower.ends_with(".engine")
+                                || path_lower.ends_with(".trt")
+                                || path_lower.ends_with(".plan")
+                        }
+                        _ => path_lower.contains(&fmt_lower),
                     };
                     matches_format || is_metadata
                 } else {
-                    // Default behavior: download all recognized formats
+                    // No GGUF found, no format specified — download all recognized formats
                     path_lower.ends_with(".bin")
                         || path_lower.ends_with(".safetensors")
                         || path_lower.ends_with(".gguf")
@@ -301,37 +334,51 @@ impl HuggingFaceClient {
             ));
         }
 
-        // If a specific format was requested, ensure we found at least one non-metadata file matching it
         if format.is_some() {
             let has_format_file = model_files.iter().any(|f| {
-                let path_lower = f.path.to_lowercase();
-                !(path_lower.ends_with(".json") || path_lower.ends_with(".txt") || path_lower.ends_with(".model"))
+                let p = f.path.to_lowercase();
+                !(p.ends_with(".json") || p.ends_with(".txt") || p.ends_with(".model"))
             });
             if !has_format_file {
                 warn!("No model weights found matching format: {:?}", format);
-                return Err(FuseError::DownloadError(
-                    format!("No model weights found matching requested format: {}", format.unwrap_or(""))
-                ));
+                return Err(FuseError::DownloadError(format!(
+                    "No model weights found matching requested format: {}",
+                    format.unwrap_or("")
+                )));
             }
         }
 
-        info!("Found {} files to download", model_files.len());
+        // Disk space check before downloading
+        let total_required: u64 = model_files.iter().map(|f| f.size).sum();
+        let available_disk =
+            crate::platform::hardware::HardwareProfiler::available_disk_bytes(destination_dir);
+        if total_required > available_disk {
+            return Err(crate::error::FuseError::InsufficientDiskSpace {
+                required_gb: total_required as f64 / 1e9,
+                available_gb: available_disk as f64 / 1e9,
+            });
+        }
+
+        info!(
+            "Found {} files to download ({:.2}GB total)",
+            model_files.len(),
+            total_required as f64 / 1e9
+        );
 
         let mut downloaded_files = Vec::new();
         let revision = revision.unwrap_or("main");
 
-        // Download each file
         for file_info in model_files {
             let dest_path = destination_dir.join(&file_info.path);
-            let url = format!("{}/{}/resolve/{}/{}", self.base_url, repository, revision, file_info.path);
-
+            let url = format!(
+                "{}/{}/resolve/{}/{}",
+                self.base_url, repository, revision, file_info.path
+            );
             info!("Downloading file: {}", file_info.path);
-
             self.download_file(&url, &dest_path, auth, resume, file_info.size, |progress| {
                 progress_callback(&file_info.path, progress);
             })
             .await?;
-
             downloaded_files.push(file_info.path);
         }
 
