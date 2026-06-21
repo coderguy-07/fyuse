@@ -5,7 +5,7 @@
 Fuse competes in the local AI inference market against 15+ tools. Our key differentiator:
 **single Rust binary that combines inference + serving + orchestration + agent harness** — nobody else does all four.
 
-**Status: 80/80 development tasks complete across 11 phases.** All core features implemented with 879+ passing tests.
+**Status: Tasks 1-15 complete + smart runtime (2026-06-21), active development on Tasks 16+.** See `IMPLEMENTATION_STATUS.md` for ground truth.
 
 ---
 
@@ -197,7 +197,7 @@ Fuse competes in the local AI inference market against 15+ tools. Our key differ
 
 ## Go-To-Market Strategy
 
-1. **Week 1-4**: Ship v0.1 — Feature-complete with 80/80 tasks, 879+ tests
+1. **Week 1-4**: Ship v0.1 — Tasks 1-15 complete, smart runtime shipped
 2. **Month 2-3**: r/LocalLLaMA launch — "Fuse: The SQLite of AI inference"
 3. **Month 3-4**: ProductHunt launch — "Single binary replaces Ollama + vLLM + LangChain"
 4. **Month 4-6**: Enterprise pilots — Edge fleet management + agent harness
