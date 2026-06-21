@@ -292,6 +292,15 @@ impl ModelManager {
             .model_layer()
             .ok_or_else(|| FuseError::DownloadError("No model layer in Ollama manifest".to_string()))?;
 
+        let available = crate::platform::hardware::HardwareProfiler::available_disk_bytes(&self.models_dir);
+        let required = model_layer.size;
+        if available < required {
+            return Err(FuseError::InsufficientDiskSpace {
+                required_gb: required as f64 / 1_000_000_000.0,
+                available_gb: available as f64 / 1_000_000_000.0,
+            });
+        }
+
         let model_dir = self.models_dir.join(name);
         tokio::fs::create_dir_all(&model_dir).await?;
 

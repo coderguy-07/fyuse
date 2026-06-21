@@ -47,7 +47,7 @@
 ### Disk Space Check
 - **Error**: `FuseError::InsufficientDiskSpace { required_gb, available_gb }` in `src/error.rs` (HTTP 507)
 - **Detection**: `HardwareProfiler::available_disk_bytes(path)` in `src/platform/hardware.rs`
-- **Behavior**: Checked before every download; fails fast with actionable error message
+- **Behavior**: Checked before every download (HuggingFace, Unsloth, ModelScope, Ollama); fails fast with actionable error message
 
 ### GPU Detection (NVIDIA + AMD)
 - **NVIDIA**: `nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits`
@@ -65,6 +65,7 @@
 - **Protocol**: OCI manifest → model layer blob by digest
 - **Provider**: `Provider::Ollama` in `src/model/source.rs`
 - **CLI**: `fuse pull ollama:llama3.2`
+- **Disk check**: `HardwareProfiler::available_disk_bytes()` called after manifest fetch (layer size known before download); returns `InsufficientDiskSpace` if insufficient
 
 ### `recommend_from_files`
 - **Location**: `src/model/recommender.rs` — `ModelRecommender::recommend_from_files()`

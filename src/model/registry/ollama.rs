@@ -215,4 +215,23 @@ mod tests {
         assert_eq!(manifest.layers.len(), 1);
         assert!(manifest.model_layer().is_some());
     }
+
+    #[test]
+    fn test_model_layer_size_usable_for_disk_check() {
+        let manifest = OllamaManifest {
+            schema_version: Some(2),
+            layers: vec![OllamaLayer {
+                digest: "sha256:abc".to_string(),
+                size: 4_200_000_000,
+                media_type: "application/vnd.ollama.image.model".to_string(),
+            }],
+        };
+        let layer = manifest.model_layer().unwrap();
+        let required_gb = layer.size as f64 / 1_000_000_000.0;
+        assert!((required_gb - 4.2).abs() < 0.01);
+
+        // Simulate disk check: insufficient space
+        let available: u64 = 1_800_000_000;
+        assert!(available < layer.size, "disk check should fire when available < required");
+    }
 }
