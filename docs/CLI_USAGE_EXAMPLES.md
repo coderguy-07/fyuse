@@ -49,23 +49,32 @@ fuse config --validate
 ### Pull Models
 
 ```bash
-# Pull from default source (Hugging Face)
-fuse pull gpt2
+# Pull from HuggingFace (default) — smart GGUF selection automatic
+# Picks highest-quality variant that fits your RAM (no --format needed)
+fuse pull TheBloke/Llama-2-7B-GGUF
 
-# Pull from specific source
-fuse pull llama-3 --source huggingface
+# Override smart selection with explicit format
+fuse pull TheBloke/Llama-2-7B-GGUF --format q4_k_m
 
-# Pull with organization/model format
-fuse pull meta-llama/llama-3.1:latest
-
-# Pull only GGUF format files
-fuse pull TheBloke/Llama-2-7B-GGUF --format gguf
-
-# Pull only Safetensors format files
+# Pull specific format type
 fuse pull meta-llama/Llama-2-7b-hf --format safetensors
 
+# Pull from ModelScope (alias: ms)
+fuse pull ms:Qwen/Qwen2.5-7B-Instruct-GGUF
+fuse pull modelscope:Qwen/Qwen2.5-7B-Instruct-GGUF
+
+# Pull from Ollama registry (OCI manifest protocol)
+fuse pull ollama:llama3.2
+fuse pull ollama:llama3.1:8b-instruct-q4_K_M
+
+# Pull from Unsloth
+fuse pull unsloth:llama-3.2-3b-instruct-gguf
+
 # Resume interrupted download
-fuse pull gpt2 --resume
+fuse pull TheBloke/Llama-2-7B-GGUF --resume
+
+# Error: insufficient disk space
+# ERROR: Insufficient disk space: need 4.2GB, have 1.8GB at /models
 ```
 
 ### List Models

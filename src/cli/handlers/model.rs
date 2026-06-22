@@ -94,6 +94,8 @@ fn build_model_source(
     let source = match provider {
         Provider::HuggingFace => ModelSource::huggingface(repo),
         Provider::Unsloth => ModelSource::unsloth(repo),
+        Provider::Ollama => ModelSource::ollama(repo),
+        Provider::ModelScope => ModelSource::modelscope(repo),
         Provider::Remote => ModelSource::remote(repo),
         Provider::Local => ModelSource::local(repo),
     };

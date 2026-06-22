@@ -1,5 +1,7 @@
 use crate::error::{FuseError, Result};
 use crate::model::huggingface::HuggingFaceClient;
+use crate::model::modelscope::ModelScopeClient;
+use crate::model::registry::ollama::OllamaRegistry;
 use crate::model::unsloth::UnslothClient;
 use crate::model::{Auth, ModelMetadata, ModelSource, Provider};
 use crate::storage::{DownloadManager, DownloadProgress, ModelRepository};
@@ -29,17 +31,22 @@ pub struct ModelManager {
     models_dir: PathBuf,
     hf_client: HuggingFaceClient,
     unsloth_client: UnslothClient,
+    ollama_client: OllamaRegistry,
+    modelscope_client: ModelScopeClient,
 }
 
 impl ModelManager {
     /// Create a new model manager
     pub fn new(repository: Arc<ModelRepository>, models_dir: PathBuf) -> Self {
+        let ollama_client = OllamaRegistry::new(&models_dir);
         Self {
             repository,
             download_manager: DownloadManager::new(),
             models_dir,
             hf_client: HuggingFaceClient::new(),
             unsloth_client: UnslothClient::new(),
+            ollama_client,
+            modelscope_client: ModelScopeClient::new(),
         }
     }
 
@@ -66,6 +73,8 @@ impl ModelManager {
         match source.provider {
             Provider::HuggingFace => self.pull_from_huggingface(source, name, auth, format, resume).await,
             Provider::Unsloth => self.pull_from_unsloth(source, name, auth, format, resume).await,
+            Provider::Ollama => self.pull_from_ollama(source, name).await,
+            Provider::ModelScope => self.pull_from_modelscope(source, name, auth, format, resume).await,
             Provider::Remote => Err(FuseError::FeatureDisabled(
                 "Remote model pulling will be implemented in task 6".to_string(),
             )),
@@ -266,6 +275,135 @@ impl ModelManager {
         Ok(metadata)
     }
 
+    /// Pull a model from Ollama registry
+    async fn pull_from_ollama(
+        &self,
+        source: ModelSource,
+        name: &str,
+    ) -> Result<ModelMetadata> {
+        use crate::model::registry::ollama::OllamaModelRef;
+
+        info!("Pulling model from Ollama: {}", source.repository);
+
+        let model_ref = OllamaModelRef::parse(&source.repository);
+        let manifest = self.ollama_client.get_manifest(&model_ref).await?;
+
+        let model_layer = manifest
+            .model_layer()
+            .ok_or_else(|| FuseError::DownloadError("No model layer in Ollama manifest".to_string()))?;
+
+        let available = crate::platform::hardware::HardwareProfiler::available_disk_bytes(&self.models_dir);
+        let required = model_layer.size;
+        if available < required {
+            return Err(FuseError::InsufficientDiskSpace {
+                required_gb: required as f64 / 1_000_000_000.0,
+                available_gb: available as f64 / 1_000_000_000.0,
+            });
+        }
+
+        let model_dir = self.models_dir.join(name);
+        tokio::fs::create_dir_all(&model_dir).await?;
+
+        let dest = self.ollama_client.model_cache_dir(&model_ref);
+        tokio::fs::create_dir_all(&dest).await?;
+
+        let blob_path = self
+            .ollama_client
+            .download_blob(&model_ref, &model_layer.digest, &dest)
+            .await?;
+
+        let size = tokio::fs::metadata(&blob_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(model_layer.size);
+
+        let metadata = ModelMetadata::new(
+            name,
+            &model_ref.full_ref(),
+            source.clone(),
+            model_ref.tag.clone(),
+            size,
+        )
+        .with_file_path(blob_path.to_string_lossy().to_string());
+
+        self.repository.save(&metadata)?;
+
+        info!("Successfully pulled Ollama model {}", name);
+        Ok(metadata)
+    }
+
+    /// Pull a model from ModelScope
+    async fn pull_from_modelscope(
+        &self,
+        source: ModelSource,
+        name: &str,
+        auth: Option<Auth>,
+        format: Option<String>,
+        resume: bool,
+    ) -> Result<ModelMetadata> {
+        info!("Pulling model from ModelScope: {}", source.repository);
+
+        let model_info = self
+            .modelscope_client
+            .get_model_info(&source.repository, auth.as_ref())
+            .await?;
+
+        info!("ModelScope model info: {:?}", model_info);
+
+        let model_dir = self.models_dir.join(name);
+        tokio::fs::create_dir_all(&model_dir).await?;
+
+        let downloaded_files = self
+            .modelscope_client
+            .download_model(
+                &source.repository,
+                source.version.as_deref(),
+                &model_dir,
+                auth.as_ref(),
+                format.as_deref(),
+                resume,
+                |file_path, progress| {
+                    self.print_progress(file_path, &progress);
+                },
+            )
+            .await?;
+
+        let mut total_size = 0u64;
+        for file_path in &downloaded_files {
+            if let Ok(meta) = tokio::fs::metadata(model_dir.join(file_path)).await {
+                total_size += meta.len();
+            }
+        }
+
+        let mut metadata = ModelMetadata::new(
+            name,
+            model_info.name.as_deref().unwrap_or(name),
+            source.clone(),
+            source.version.clone().unwrap_or_else(|| "master".to_string()),
+            total_size,
+        );
+
+        if let Some(tags) = model_info.tags {
+            metadata = metadata.with_tags(tags);
+        }
+        if let Some(fmt) = format {
+            metadata = metadata.with_format(fmt);
+        }
+        for file_path in downloaded_files {
+            metadata = metadata.with_file_path(file_path.clone());
+            if file_path.ends_with("config.json") {
+                metadata = metadata.with_config_path(file_path.clone());
+            } else if file_path.contains("tokenizer") && file_path.ends_with(".json") {
+                metadata = metadata.with_tokenizer_path(file_path);
+            }
+        }
+
+        self.repository.save(&metadata)?;
+
+        info!("Successfully pulled ModelScope model {}", name);
+        Ok(metadata)
+    }
+
     /// Print download progress
     fn print_progress(&self, file_path: &str, progress: &DownloadProgress) {
         if let Some(percentage) = progress.percentage {
@@ -419,6 +557,8 @@ impl ModelManager {
         let mut new_metadata = match source.provider {
             Provider::HuggingFace => self.pull_from_huggingface(source, name, auth, format, false).await?,
             Provider::Unsloth => self.pull_from_unsloth(source, name, auth, format, false).await?,
+            Provider::Ollama => self.pull_from_ollama(source, name).await?,
+            Provider::ModelScope => self.pull_from_modelscope(source, name, auth, format, false).await?,
             Provider::Remote => {
                 return Err(FuseError::FeatureDisabled(
                     "Remote model updates will be implemented in task 6".to_string(),

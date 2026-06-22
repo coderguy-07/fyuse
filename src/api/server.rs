@@ -1,11 +1,11 @@
 //! API server — axum-based HTTP server with middleware stack.
 
 use crate::error::Result;
-use axum::{extract::State, response::Json, routing::get, Router};
+use axum::{extract::State, middleware, response::Json, routing::get, Router};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 /// Shared application state.
@@ -60,7 +60,10 @@ impl ApiServer {
             .merge(crate::api::routes::ollama::router())
             .merge(crate::api::routes::openai::router())
             .merge(crate::api::routes::anthropic::router())
-            .layer(CorsLayer::permissive())
+            .layer(middleware::from_fn(
+                crate::server::middleware::auth_middleware,
+            ))
+            .layer(build_cors_layer(&self.state.config.cors_origins))
             .layer(TraceLayer::new_for_http())
             .with_state(self.state.clone())
     }
@@ -100,6 +103,25 @@ impl ApiServer {
         });
 
         Ok((addr, handle))
+    }
+}
+
+/// Build a CORS layer from the configured origins list.
+/// If `cors_origins` contains `"*"` the layer is fully permissive (dev mode).
+/// Otherwise only the listed origins are allowed.
+fn build_cors_layer(cors_origins: &[String]) -> CorsLayer {
+    if cors_origins.iter().any(|o| o == "*") {
+        return CorsLayer::permissive();
+    }
+    let allowed: Vec<axum::http::HeaderValue> = cors_origins
+        .iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
+    if allowed.is_empty() {
+        // No valid origins configured — deny cross-origin by default
+        CorsLayer::new()
+    } else {
+        CorsLayer::new().allow_origin(AllowOrigin::list(allowed))
     }
 }
 

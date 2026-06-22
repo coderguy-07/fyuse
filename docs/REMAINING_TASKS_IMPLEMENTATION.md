@@ -5,8 +5,8 @@ This document provides the implementation roadmap for all remaining tasks (11-26
 ## Status Overview
 
 **✅ Completed**: All tasks (11-26) fully implemented  
-**📊 Test Coverage**: 879 tests passing  
-**📂 Codebase**: 182 Rust files, 46,348 lines across 25 modules
+**📊 Test Coverage**: run `cargo test --lib` for current count (879 was a stale snapshot)  
+**📂 Codebase**: 182+ Rust files across 25+ modules
 
 ---
 
@@ -439,10 +439,9 @@ src/
 - Task 16 vulnerability scanner: Only Trivy integrated; GHSA, MITRE CVE, NIST NVD databases not implemented
 
 **📊 Metrics:**
-- 879 tests passing
-- 46,348 lines of code
-- 182 Rust source files across 25 modules
-- 3 pre-existing test failures (pool, queue)
+- Tests: run `cargo test --lib` (879 was stale)
+- 46,348+ lines of code
+- 182+ Rust source files across 25+ modules
 
 ---
 

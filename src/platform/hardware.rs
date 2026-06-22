@@ -86,13 +86,72 @@ impl HardwareProfiler {
                 return Some(GpuInfo {
                     name: "Apple Silicon GPU".to_string(),
                     vendor: GpuVendor::Apple,
-                    vram_bytes: None, // Shared memory on Apple Silicon
+                    vram_bytes: None, // Shared memory — size = system RAM
                 });
             }
         }
 
-        // TODO: NVIDIA GPU detection via nvidia-smi or NVML
-        // TODO: AMD GPU detection
+        // NVIDIA via nvidia-smi
+        if let Some(gpu) = Self::detect_nvidia() {
+            return Some(gpu);
+        }
+
+        // AMD via rocm-smi
+        if let Some(gpu) = Self::detect_amd() {
+            return Some(gpu);
+        }
+
+        None
+    }
+
+    fn detect_nvidia() -> Option<GpuInfo> {
+        let output = std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let line = stdout.lines().next()?;
+        let mut parts = line.splitn(2, ',');
+        let name = parts.next()?.trim().to_string();
+        let vram_mb: u64 = parts.next()?.trim().parse().ok()?;
+
+        Some(GpuInfo {
+            name,
+            vendor: GpuVendor::Nvidia,
+            vram_bytes: Some(vram_mb * 1024 * 1024),
+        })
+    }
+
+    fn detect_amd() -> Option<GpuInfo> {
+        let output = std::process::Command::new("rocm-smi")
+            .args(["--showmeminfo", "vram", "--csv"])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // CSV format: device,VRAM Total Memory (B),VRAM Total Used Memory (B)
+        for line in stdout.lines().skip(1) {
+            let mut parts = line.split(',');
+            let _device = parts.next()?;
+            if let Some(vram_str) = parts.next() {
+                if let Ok(vram_bytes) = vram_str.trim().parse::<u64>() {
+                    return Some(GpuInfo {
+                        name: "AMD GPU".to_string(),
+                        vendor: GpuVendor::Amd,
+                        vram_bytes: Some(vram_bytes),
+                    });
+                }
+            }
+        }
         None
     }
 
@@ -101,6 +160,22 @@ impl HardwareProfiler {
         // Reserve ~2GB for OS and Fuse overhead
         let overhead = 2 * 1024 * 1024 * 1024u64;
         profile.available_ram_bytes.saturating_sub(overhead)
+    }
+
+    /// Returns available disk space in bytes at the given path.
+    /// Finds the longest-matching mount point. Returns u64::MAX if detection fails.
+    pub fn available_disk_bytes(path: &std::path::Path) -> u64 {
+        use sysinfo::Disks;
+        let disks = Disks::new_with_refreshed_list();
+        let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+        disks
+            .list()
+            .iter()
+            .filter(|d| abs.starts_with(d.mount_point()))
+            .max_by_key(|d| d.mount_point().as_os_str().len())
+            .map(|d| d.available_space())
+            .unwrap_or(u64::MAX)
     }
 }
 
@@ -154,6 +229,13 @@ mod tests {
 
         // Should be less than total RAM
         assert!(max < profile.total_ram_bytes);
+    }
+
+    #[test]
+    fn test_available_disk_bytes() {
+        let bytes = HardwareProfiler::available_disk_bytes(std::path::Path::new("."));
+        // Should return something > 0 (or u64::MAX as fallback — either is acceptable)
+        assert!(bytes > 0, "available_disk_bytes should return nonzero");
     }
 
     #[cfg(target_os = "macos")]

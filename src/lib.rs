@@ -26,6 +26,10 @@ pub mod observability;
 pub mod security;
 pub mod tui;
 
+/// MCP server — gated behind the "mcp" feature until ToolContext is fully wired.
+#[cfg(feature = "mcp")]
+pub mod mcp;
+
 // New architecture modules
 pub mod agents;
 pub mod api;

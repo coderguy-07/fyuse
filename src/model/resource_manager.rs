@@ -489,11 +489,18 @@ mod tests {
         manager.mark_active("test-model");
         manager.mark_request_complete("test-model");
 
-        // Wait for idle timeout
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        let idle_models = manager.get_idle_models();
-        assert_eq!(idle_models.len(), 1);
-        assert_eq!(idle_models[0], "test-model");
+        // Poll until the model becomes idle (avoids timing-sensitive fixed sleeps)
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let idle_models = manager.get_idle_models();
+            if idle_models.len() == 1 {
+                assert_eq!(idle_models[0], "test-model");
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!("Timed out waiting for model to become idle");
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 }

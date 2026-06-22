@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fuse follows a strict **TDD (Test-Driven Development)** protocol: RED → GREEN → REFACTOR. Every feature is implemented test-first. The codebase has **879+ passing tests** across all modules.
+Fuse follows a strict **TDD (Test-Driven Development)** protocol: RED → GREEN → REFACTOR. Every feature is implemented test-first. Run `cargo test --lib` for current test count (historical snapshots were inconsistent).
 
 ---
 
@@ -262,7 +262,7 @@ mod tests {
 | Metric | Target | Current |
 |--------|--------|---------|
 | New code coverage | >95% | ~95% (TDD enforced) |
-| Overall test count | >800 | 879+ |
+| Overall test count | >800 | run `cargo test --lib` |
 | Clippy warnings | 0 | 0 |
 | Pre-existing failures | <10 | 3 |
 

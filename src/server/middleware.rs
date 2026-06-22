@@ -163,18 +163,40 @@ pub async fn auth_middleware(headers: HeaderMap, request: Request, next: Next) -
     (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
 }
 
-/// Validate API key (placeholder implementation)
+/// Validate API key against the configured allowlist.
+///
+/// Set `FUSE_API_KEYS` to a comma-separated list of valid keys to restrict access.
+/// If the variable is unset, any non-empty key is accepted (open/dev mode).
 fn validate_api_key(key: &str) -> bool {
-    // In production, check against database or environment variable
-    // For now, accept any non-empty key
-    !key.is_empty()
+    if key.is_empty() {
+        return false;
+    }
+    if let Ok(configured) = std::env::var("FUSE_API_KEYS") {
+        return configured
+            .split(',')
+            .map(str::trim)
+            .any(|k| k == key);
+    }
+    // No keys configured — open mode, accept any non-empty key
+    true
 }
 
-/// Validate bearer token (placeholder implementation)
+/// Validate bearer token against the configured allowlist.
+///
+/// Set `FUSE_API_KEYS` to a comma-separated list of valid tokens to restrict access.
+/// If the variable is unset, any non-empty token is accepted (open/dev mode).
 fn validate_bearer_token(token: &str) -> bool {
-    // In production, validate JWT or check against database
-    // For now, accept any non-empty token
-    !token.is_empty()
+    if token.is_empty() {
+        return false;
+    }
+    if let Ok(configured) = std::env::var("FUSE_API_KEYS") {
+        return configured
+            .split(',')
+            .map(str::trim)
+            .any(|k| k == token);
+    }
+    // No keys configured — open mode, accept any non-empty token
+    true
 }
 
 /// Security headers middleware

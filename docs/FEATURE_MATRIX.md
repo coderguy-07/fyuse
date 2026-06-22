@@ -1,6 +1,6 @@
 # Fuse Feature Matrix v0.1.0
 
-**Status**: 80/80 tasks complete | 879+ tests passing | All 10 phases done
+**Status**: Tasks 1-15 verified complete | run `cargo test --lib` for current test count | Updated 2026-06-21
 
 ---
 
@@ -91,6 +91,11 @@
 | Model recommender | Yes | 10 tests | `model/recommender.rs` |
 | Delta model updates | Yes | 15 tests | `model/delta.rs` |
 | GGUF format support | Yes | Yes | `model/formats/gguf.rs` |
+| **Smart GGUF selection** | **Yes** | **7 tests** | `model/format_selector.rs` |
+| **Disk space check before download** | **Yes** | **Yes** | `platform/hardware.rs`, `error.rs` |
+| **ModelScope registry** | **Yes** | **Yes** | `model/modelscope.rs` |
+| **Ollama model pull (OCI)** | **Yes** | **Yes** | `model/manager.rs` + `model/registry/ollama.rs` |
+| **recommend_from_files** | **Yes** | **Yes** | `model/recommender.rs` |
 
 ---
 
@@ -256,5 +261,5 @@
 
 ---
 
-**Last Updated**: 2026-04-09
-**Status**: ALL FEATURES IMPLEMENTED
+**Last Updated**: 2026-06-21
+**Note**: "Accessibility & i18n" (Req 38) is a specification goal — zero WCAG/i18n/RTL code implemented. Apple Health integration not yet implemented.
